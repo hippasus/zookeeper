@@ -1,0 +1,10 @@
+<Project>
+	<PropertyGroup>
+		<LangVersion>11.0</LangVersion>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>true</ImplicitUsings>
+		<Version>0.0.1-alpha01</Version>
+		<FileVersion>0.0.1</FileVersion>
+		<PackageVersion>0.0.1-alpha01</PackageVersion>
+	</PropertyGroup>
+</Project>
