@@ -66,16 +66,26 @@ public class DataInput
         return BigEndianBitConverter.ToInt64(_byteBuffer, 0);
     }
 
+    /// <summary>
+    /// Reads a single-precision floating-point value from the stream, using the bit converter
+    /// for this reader. 4 bytes are read.
+    /// </summary>
+    /// <returns>The floating point value read</returns>
     public float readFloat()
     {
-        //TODO: implement readFloat from stream
-        throw new NotImplementedException();
+        ReadExactSizeOfBytes(_byteBuffer, 4);
+        return BigEndianBitConverter.ToSingle(_byteBuffer, 0);
     }
 
+    /// <summary>
+    /// Reads a double-precision floating-point value from the stream, using the bit converter
+    /// for this reader. 8 bytes are read.
+    /// </summary>
+    /// <returns>The double floating point value read</returns>
     public double readDouble()
     {
-        //TODO: implement readDouble from stream
-        throw new NotImplementedException();
+        ReadExactSizeOfBytes(_byteBuffer, 8);
+        return BigEndianBitConverter.ToDouble(_byteBuffer, 0);
     }
 
     /// <summary>

@@ -62,24 +62,22 @@ public class DataOutput
     /// Writes a float number to the stream, using the bit converter
     /// for this writer. 4 bytes are written.
     /// </summary>
-    /// <param name="value"></param>
-    /// <exception cref="NotImplementedException"></exception>
+    /// <param name="value">The value to write</param>
     public void writeFloat(float value)
     {
-        //TODO: implement write float to stream
-        throw new NotImplementedException();
+        BigEndianBitConverter.CopyBytes(value, _buffer, 0);
+        WriteInternal(_buffer, 4);
     }
 
     /// <summary>
     /// Writes a float number to the stream, using the bit converter
     /// for this writer. 8 bytes are written.
     /// </summary>
-    /// <param name="value"></param>
-    /// <exception cref="NotImplementedException"></exception>
+    /// <param name="value">The value to write</param>
     public void writeDouble(double value)
     {
-        //TODO: implement write double to stream
-        throw new NotImplementedException();
+        BigEndianBitConverter.CopyBytes(value, _buffer, 0);
+        WriteInternal(_buffer, 8);
     }
 
     /// <summary>
