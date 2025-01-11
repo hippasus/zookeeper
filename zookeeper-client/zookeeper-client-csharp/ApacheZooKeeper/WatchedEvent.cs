@@ -2,8 +2,8 @@ namespace ApacheZooKeeper;
 
 using ApacheZooKeeper.Proto;
 
-using EventType = Watcher.EventType;
-using KeeperState = Watcher.KeeperState;
+using EventType = Watcher.Event.EventType;
+using KeeperState = Watcher.Event.KeeperState;
 
 public class WatchedEvent
 {

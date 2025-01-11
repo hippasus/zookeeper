@@ -1,7 +1,7 @@
 namespace ApacheZooKeeper;
 
-using EventType = Watcher.EventType;
-using KeeperState = Watcher.KeeperState;
+using EventType = Watcher.Event.EventType;
+using KeeperState = Watcher.Event.KeeperState;
 
 public interface ClientWatchManager
 {

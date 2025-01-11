@@ -1,6 +1,6 @@
 namespace ApacheZooKeeper;
 
-using EventType = Watcher.EventType;
+using EventType = Watcher.Event.EventType;
 using WatcherType = Watcher.WatcherType;
 
 public class WatchDeregistration
