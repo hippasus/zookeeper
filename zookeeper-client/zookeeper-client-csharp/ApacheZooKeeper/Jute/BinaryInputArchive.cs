@@ -106,7 +106,7 @@ public class BinaryInputArchive : InputArchive
         return _in.readDouble();
     }
 
-    public string? readString(String tag)
+    public string readString(String tag)
     {
         int len = _in.readInt();
         if (len == -1)
@@ -121,7 +121,7 @@ public class BinaryInputArchive : InputArchive
         return Encoding.UTF8.GetString(b);
     }
 
-    public byte[]? readBuffer(String tag)
+    public byte[] readBuffer(String tag)
     {
         int len = readInt(tag);
         if (len == -1)
@@ -148,7 +148,7 @@ public class BinaryInputArchive : InputArchive
     {
     }
 
-    public Index? startVector(String tag)
+    public Index startVector(String tag)
     {
         int len = readInt(tag);
         if (len == -1)

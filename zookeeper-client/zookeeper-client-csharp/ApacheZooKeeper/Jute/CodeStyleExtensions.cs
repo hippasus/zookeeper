@@ -20,9 +20,9 @@ public static class InputArchiveCodeStyleExtensions
 
     public static double ReadDouble(this InputArchive o, string tag) => o.readDouble(tag);
 
-    public static string? ReadString(this InputArchive o, string tag) => o.readString(tag);
+    public static string ReadString(this InputArchive o, string tag) => o.readString(tag);
 
-    public static byte[]? ReadBuffer(this InputArchive o, string tag) => o.readBuffer(tag);
+    public static byte[] ReadBuffer(this InputArchive o, string tag) => o.readBuffer(tag);
 
     public static void ReadRecord(this InputArchive o, Record r, string tag) => o.readRecord(r, tag);
 
@@ -30,11 +30,11 @@ public static class InputArchiveCodeStyleExtensions
 
     public static void EndRecord(this InputArchive o, string tag) => o.endRecord(tag);
 
-    public static Index? StartVector(this InputArchive o, string tag) => o.startVector(tag);
+    public static Index StartVector(this InputArchive o, string tag) => o.startVector(tag);
 
     public static void EndVector(this InputArchive o, string tag) => o.endVector(tag);
 
-    public static Index? StartMap(this InputArchive o, string tag) => o.startMap(tag);
+    public static Index StartMap(this InputArchive o, string tag) => o.startMap(tag);
 
     public static void EndMap(this InputArchive o, string tag) => o.endMap(tag);
 }

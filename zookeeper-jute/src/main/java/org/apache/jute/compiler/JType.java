@@ -79,7 +79,9 @@ public abstract class JType {
     }
 
     String genCsharpGetSet(String fname, int fIdx) {
-        String getFunc = "  public " + getCsharpType() + " " + capitalize(fname) + " { get; set; } ";
+        String getFunc = "  public " + getCsharpType() + " " + capitalize(fname) + " { get; set; } \n";
+        getFunc += "  public " + getCsharpType() + " get" + capitalize(fname) + "() => " + capitalize(fname) + ";\n";
+        getFunc += "  public void " + " set" + capitalize(fname) + "(" + getCsharpType() + " v) => " + capitalize(fname) + " = v;";
         return getFunc;
     }
 

@@ -2,52 +2,59 @@ namespace ApacheZooKeeper.Jute;
 
 using System.Text;
 
-public class BinaryOutputArchive : OutputArchive {
+public class BinaryOutputArchive : OutputArchive
+{
     //private ByteBuffer bb = ByteBuffer.allocate(1024);
 
     private DataOutput _out;
 
     private long dataSize;
 
-    /*
-    public static BinaryOutputArchive getArchive(OutputStream strm) {
-        return new BinaryOutputArchive(new DataOutputStream(strm));
+    public static BinaryOutputArchive getArchive(Stream strm)
+    {
+        return new BinaryOutputArchive(new DataOutput(strm));
     }
-    */
 
     /**
      * Creates a new instance of BinaryOutputArchive.
      */
-    public BinaryOutputArchive(DataOutput @out) {
+    public BinaryOutputArchive(DataOutput @out)
+    {
         _out = @out;
     }
 
-    public void writeByte(byte b, String tag) {
+    public void writeByte(byte b, String tag)
+    {
         _out.writeByte(b);
         dataSize += 1;
     }
 
-    public void writeBool(bool b, String tag) {
+    public void writeBool(bool b, String tag)
+    {
         _out.writeBoolean(b);
         dataSize += 1;
     }
 
-    public void writeInt(int i, String tag) {
+    public void writeInt(int i, String tag)
+    {
         _out.writeInt(i);
         dataSize += 4;
     }
 
-    public void writeLong(long l, String tag) {
+    public void writeLong(long l, String tag)
+    {
         _out.writeLong(l);
         dataSize += 8;
     }
 
-    public void writeFloat(float f, String tag) {
+    public void writeFloat(float f, String tag)
+    {
         _out.writeFloat(f);
         dataSize += 4;
     }
 
-    public void writeDouble(double d, String tag) {
+    public void writeDouble(double d, String tag)
+    {
         _out.writeDouble(d);
         dataSize += 8;
     }
@@ -86,12 +93,14 @@ public class BinaryOutputArchive : OutputArchive {
         return bb;
     }
     */
-
-    public void writeString(String s, String tag) {
-        if (s == null) {
+    public void writeString(String s, String tag)
+    {
+        if (s == null)
+        {
             writeInt(-1, "len");
             return;
         }
+
         //ByteBuffer bb = stringToByteBuffer(s);
         //int strLen = bb.remaining();
         var bb = Encoding.UTF8.GetBytes(s);
@@ -103,46 +112,58 @@ public class BinaryOutputArchive : OutputArchive {
     }
 
     public void writeBuffer(byte[] barr, String tag)
-            {
-        if (barr == null) {
+    {
+        if (barr == null)
+        {
             writeInt(-1, "len");
             return;
         }
+
         int len = barr.Length;
         writeInt(len, "len");
         _out.write(barr);
         dataSize += len;
     }
 
-    public void writeRecord(Record r, String tag) {
+    public void writeRecord(Record r, String tag)
+    {
         r.serialize(this, tag);
     }
 
-    public void startRecord(Record r, String tag) {
+    public void startRecord(Record r, String tag)
+    {
     }
 
-    public void endRecord(Record r, String tag) {
+    public void endRecord(Record r, String tag)
+    {
     }
 
-    public void startVector<T>(List<T> v, String tag) {
-        if (v == null) {
+    public void startVector<T>(List<T> v, String tag)
+    {
+        if (v == null)
+        {
             writeInt(-1, tag);
             return;
         }
+
         writeInt(v.Count, tag);
     }
 
-    public void endVector<T>(List<T> v, String tag) {
+    public void endVector<T>(List<T> v, String tag)
+    {
     }
 
-    public void startMap<TKey, TValue>(IDictionary<TKey, TValue> v, String tag) {
+    public void startMap<TKey, TValue>(IDictionary<TKey, TValue> v, String tag)
+    {
         writeInt(v.Count, tag);
     }
 
-    public void endMap<TKey, TValue>(IDictionary<TKey, TValue> v, String tag) {
+    public void endMap<TKey, TValue>(IDictionary<TKey, TValue> v, String tag)
+    {
     }
 
-    public long getDataSize() {
+    public long getDataSize()
+    {
         return dataSize;
     }
 }

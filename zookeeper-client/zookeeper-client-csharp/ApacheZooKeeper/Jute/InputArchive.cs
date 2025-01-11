@@ -14,9 +14,9 @@ public interface InputArchive {
 
     double readDouble(String tag);
 
-    string? readString(String tag);
+    string readString(String tag);
 
-    byte[]? readBuffer(String tag);
+    byte[] readBuffer(String tag);
 
     void readRecord(Record r, String tag);
 
@@ -24,11 +24,11 @@ public interface InputArchive {
 
     void endRecord(String tag);
 
-    Index? startVector(String tag);
+    Index startVector(String tag);
 
     void endVector(String tag);
 
-    Index? startMap(String tag);
+    Index startMap(String tag);
 
     void endMap(String tag);
 
