@@ -276,7 +276,7 @@ public class ZKWatchManager
         int rc,
         HashSet<Watcher> removedWatchers) {
         if (!local && rc != KeeperException.Code.OK.intValue()) {
-            throw KeeperException.create(KeeperException.Code.get(rc), path);
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(rc), path);
         }
         bool success = false;
         // When local flag is true, remove watchers for the given path

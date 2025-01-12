@@ -2,6 +2,8 @@ namespace ApacheZooKeeper;
 
 internal static class CSharpTypeJavaExtentions
 {
+    public static bool isEmpty(this string s) => string.IsNullOrEmpty(s);
+
     public static TValue get<TKey, TValue>(this IDictionary<TKey, TValue> dic, TKey key) => dic[key];
 
     public static TValue put<TKey, TValue>(this IDictionary<TKey, TValue> dic, TKey key, TValue value)
