@@ -3,6 +3,14 @@ namespace ApacheZooKeeper;
 internal static class CSharpTypeJavaExtentions
 {
     public static bool isEmpty(this string s) => string.IsNullOrEmpty(s);
+    public static int length(this string s) => s?.Length ?? 0;
+    public static char charAt(this string s, int index) => s[index];
+    public static char[] toCharArray(this string s) => s.ToCharArray();
+    public static string replace(this string s, string oldValue, string newValue) => s.Replace(oldValue, newValue);
+    public static string replace(this string s, char oldChar, char newChar) => s.Replace(oldChar, newChar);
+    public static string[] split(this string s, string seprator) => s.Split(new string[] { seprator }, StringSplitOptions.None);
+
+    public static int length<T>(this T[] t) => t?.Length ?? 0;
 
     public static TValue get<TKey, TValue>(this IDictionary<TKey, TValue> dic, TKey key) => dic[key];
 
