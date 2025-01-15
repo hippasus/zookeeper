@@ -21,61 +21,61 @@ public class ZKWatchManager
         this.defaultWatcher = defaultWatcher;
     }
 
-    void setDefaultWatcher(Watcher defaultWatcher) {
+    public void setDefaultWatcher(Watcher defaultWatcher) {
         this.defaultWatcher = defaultWatcher;
     }
 
-    Watcher getDefaultWatcher() {
+    public Watcher getDefaultWatcher() {
         return defaultWatcher;
     }
 
-    List<String> getDataWatchList() {
+    public List<String> getDataWatchList() {
         lock (dataWatches) {
             return dataWatches.keyList();
         }
     }
 
-    List<String> getChildWatchList() {
+    public List<String> getChildWatchList() {
         lock (childWatches) {
             return childWatches.keyList();
         }
     }
 
-    List<String> getExistWatchList() {
+    public List<String> getExistWatchList() {
         lock (existWatches) {
             return existWatches.keyList();
         }
     }
 
-    List<String> getPersistentWatchList() {
+    public List<String> getPersistentWatchList() {
         lock (persistentWatches) {
             return persistentWatches.keyList();
         }
     }
 
-    List<String> getPersistentRecursiveWatchList() {
+    public List<String> getPersistentRecursiveWatchList() {
         lock (persistentRecursiveWatches) {
             return persistentRecursiveWatches.keyList();
         }
     }
 
-    Dictionary<String, HashSet<Watcher>> getDataWatches() {
+    public Dictionary<String, HashSet<Watcher>> getDataWatches() {
         return dataWatches;
     }
 
-    Dictionary<String, HashSet<Watcher>> getExistWatches() {
+    public Dictionary<String, HashSet<Watcher>> getExistWatches() {
         return existWatches;
     }
 
-    Dictionary<String, HashSet<Watcher>> getChildWatches() {
+    public Dictionary<String, HashSet<Watcher>> getChildWatches() {
         return childWatches;
     }
 
-    Dictionary<String, HashSet<Watcher>> getPersistentWatches() {
+    public Dictionary<String, HashSet<Watcher>> getPersistentWatches() {
         return persistentWatches;
     }
 
-    Dictionary<String, HashSet<Watcher>> getPersistentRecursiveWatches() {
+    public Dictionary<String, HashSet<Watcher>> getPersistentRecursiveWatches() {
         return persistentRecursiveWatches;
     }
 

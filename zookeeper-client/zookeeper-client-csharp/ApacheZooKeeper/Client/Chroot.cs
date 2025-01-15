@@ -2,7 +2,7 @@ namespace ApacheZooKeeper.Client;
 
 public abstract record Chroot
 {
-    static Chroot ofNullable(string chroot)
+    public static Chroot ofNullable(string chroot)
     {
         if (chroot == null)
         {

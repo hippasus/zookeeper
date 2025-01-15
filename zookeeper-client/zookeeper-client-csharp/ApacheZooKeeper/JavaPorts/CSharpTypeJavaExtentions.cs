@@ -1,6 +1,7 @@
 namespace ApacheZooKeeper;
 
 using System.Text;
+using System.Text.RegularExpressions;
 
 internal static class CSharpTypeJavaExtentions
 {
@@ -10,7 +11,13 @@ internal static class CSharpTypeJavaExtentions
     public static char[] toCharArray(this string s) => s.ToCharArray();
     public static string replace(this string s, string oldValue, string newValue) => s.Replace(oldValue, newValue);
     public static string replace(this string s, char oldChar, char newChar) => s.Replace(oldChar, newChar);
+    public static string replaceAll(this string s, string pattern, string replacement) => Regex.Replace(s, pattern, replacement);
     public static string[] split(this string s, string seprator) => s.Split(new string[] { seprator }, StringSplitOptions.None);
+    public static int indexOf(this string s, char c) => s.IndexOf(c);
+    public static int lastIndexOf(this string s, char c) => s.LastIndexOf(c);
+    public static bool startsWith(this string s, string value) => s.StartsWith(value);
+    public static string substring(this string s, int start) => s.Substring(start);
+    public static string substring(this string s, int start, int length) => s.Substring(start, length);
 
     public static int length<T>(this T[] t) => t?.Length ?? 0;
 
@@ -61,4 +68,9 @@ internal static class CSharpTypeJavaExtentions
     }
 
     public static string toString(this StringBuilder sb) => sb.ToString();
+
+    public static void close(this Stream stream) => stream.Close();
+    public static byte[] toByteArray(this MemoryStream stream) => stream.ToArray();
+
+    public static TResult apply<T, TResult>(this Func<T, TResult> func, T arg) => func(arg);
 }
