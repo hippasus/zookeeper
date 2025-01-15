@@ -1,5 +1,7 @@
 namespace ApacheZooKeeper;
 
+using System.Text;
+
 internal static class CSharpTypeJavaExtentions
 {
     public static bool isEmpty(this string s) => string.IsNullOrEmpty(s);
@@ -45,4 +47,18 @@ internal static class CSharpTypeJavaExtentions
     public static bool remove<T>(this HashSet<T> hashSet, T value) => hashSet.Remove(value);
 
     public static bool contains<T>(this HashSet<T> hashSet, T value) => hashSet.Contains(value);
+
+    public static StringBuilder append(this StringBuilder sb, string value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
+    public static StringBuilder append(this StringBuilder sb, int value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
+    public static string toString(this StringBuilder sb) => sb.ToString();
 }

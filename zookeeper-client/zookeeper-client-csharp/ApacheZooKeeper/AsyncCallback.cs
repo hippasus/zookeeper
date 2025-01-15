@@ -1,0 +1,307 @@
+namespace ApacheZooKeeper;
+
+using ApacheZooKeeper.Data;
+
+public interface AsyncCallback
+{
+}
+
+/**
+ * This callback is used to retrieve the stat of the node.
+ */
+public interface StatCallback : AsyncCallback {
+
+    /**
+     * Process the result of the asynchronous call.
+     *
+     * <p>On success, rc is {@link KeeperException.Code#OK}.
+     *
+     * <p>On failure, rc is set to the corresponding failure code in {@link KeeperException}.
+     * <ul>
+     *  <li> {@link KeeperException.Code#NONODE}
+     *              - The node on given path doesn't exist for some API calls.</li>
+     *  <li> {@link KeeperException.Code#BADVERSION}
+     *              - The given version doesn't match the node's version for some API calls.</li>
+     * </ul>
+     *
+     * @param rc   The return code or the result of the call.
+     * @param path The path that we passed to asynchronous calls.
+     * @param ctx  Whatever context object that we passed to asynchronous calls.
+     * @param stat {@link Stat} object of the node on given path.
+     *
+     * @see ZooKeeper#exists(String, boolean, AsyncCallback.StatCallback, Object)
+     * @see ZooKeeper#exists(String, Watcher, AsyncCallback.StatCallback, Object)
+     * @see ZooKeeper#setData(String, byte[], int, AsyncCallback.StatCallback, Object)
+     * @see ZooKeeper#setACL(String, List, int, AsyncCallback.StatCallback, Object)
+     */
+    void processResult(int rc, String path, Object ctx, Stat stat);
+
+}
+
+/**
+ * This callback is used to get all children node number of the node.
+ *
+ * @since 3.6.0
+ */
+public interface AllChildrenNumberCallback : AsyncCallback {
+
+    /**
+     * @param rc      The return code or the result of the call.
+     * @param ctx     Whatever context object that we passed to asynchronous calls.
+     * @param number  The number of children nodes under a specific path.
+     *
+     * @see ZooKeeper#getAllChildrenNumber(String, AsyncCallback.AllChildrenNumberCallback, Object)
+     */
+    void processResult(int rc, String path, Object ctx, int number);
+
+}
+
+/**
+ * This callback is used to retrieve the data and stat of the node.
+ */
+public interface DataCallback : AsyncCallback {
+
+    /**
+     * Process the result of asynchronous calls.
+     *
+     * <p>On success, rc is {@link KeeperException.Code#OK}.
+     *
+     * <p>On failure, rc is set to the corresponding failure code in {@link KeeperException}.
+     * <ul>
+     *  <li>{@link KeeperException.Code#NONODE}
+     *             - The node on given path doesn't exist for some API calls.</li>
+     * </ul>
+     *
+     * @param rc   The return code or the result of the call.
+     * @param path The path that we passed to asynchronous calls.
+     * @param ctx  Whatever context object that we passed to asynchronous calls.
+     * @param data The data of the node.
+     * @param stat {@link Stat} object of the node on given path.
+     *
+     * @see ZooKeeper#getData(String, boolean, AsyncCallback.DataCallback, Object)
+     * @see ZooKeeper#getData(String, Watcher, AsyncCallback.DataCallback, Object)
+     * @see ZooKeeper#getConfig(boolean, AsyncCallback.DataCallback, Object)
+     * @see ZooKeeper#getConfig(Watcher, AsyncCallback.DataCallback, Object)
+     */
+    void processResult(int rc, String path, Object ctx, byte[] data, Stat stat);
+
+}
+
+/**
+ * This callback is used to retrieve the ACL and stat of the node.
+ */
+public interface ACLCallback : AsyncCallback {
+
+    /**
+     * Process the result of the asynchronous call.
+     *
+     * <p>On success, rc is {@link KeeperException.Code#OK}.
+     *
+     * <p>On failure, rc is set to the corresponding failure code in {@link KeeperException}.
+     * <ul>
+     *  <li>{@link KeeperException.Code#NONODE}
+     *             - The node on given path doesn't exist for some API calls.</li>
+     * </ul>
+     *
+     * @param rc   The return code or the result of the call.
+     * @param path The path that we passed to asynchronous calls.
+     * @param ctx  Whatever context object that we passed to asynchronous calls.
+     * @param acl  ACL Id in {@link ZooDefs.Ids}.
+     * @param stat {@link Stat} object of the node on given path.
+     *
+     * @see ZooKeeper#getACL(String, Stat, AsyncCallback.ACLCallback, Object)
+     */
+    void processResult(int rc, String path, Object ctx, List<ACL> acl, Stat stat);
+
+}
+
+/**
+ * This callback is used to retrieve the children of the node.
+ */
+public interface ChildrenCallback : AsyncCallback {
+
+    /**
+     * Process the result of the asynchronous call.
+     *
+     * <p>On success, rc is {@link KeeperException.Code#OK}.
+     *
+     * <p>On failure, rc is set to the corresponding failure code in {@link KeeperException}.
+     * <ul>
+     *  <li>{@link KeeperException.Code#NONODE}
+     *             - The node on given path doesn't exist for some API calls.</li>
+     * </ul>
+     *
+     * @param rc       The return code or the result of the call.
+     * @param path     The path that we passed to asynchronous calls.
+     * @param ctx      Whatever context object that we passed to asynchronous calls.
+     * @param children An unordered array of children of the node on given path.
+     *
+     * @see ZooKeeper#getChildren(String, boolean, AsyncCallback.ChildrenCallback, Object)
+     * @see ZooKeeper#getChildren(String, Watcher, AsyncCallback.ChildrenCallback, Object)
+     */
+    void processResult(int rc, String path, Object ctx, List<String> children);
+
+}
+
+/**
+ * This callback is used to retrieve the children and stat of the node.
+ */
+public interface Children2Callback : AsyncCallback {
+
+    /**
+     * Process the result of the asynchronous call.
+     *
+     * @param rc       The return code or the result of the call.
+     * @param path     The path that we passed to asynchronous calls.
+     * @param ctx      Whatever context object that we passed to asynchronous calls.
+     * @param children An unordered array of children of the node on given path.
+     * @param stat     {@link Stat} object of the node on given path.
+     *
+     * @see ChildrenCallback
+     * @see ZooKeeper#getChildren(String, boolean, AsyncCallback.Children2Callback, Object)
+     * @see ZooKeeper#getChildren(String, Watcher, AsyncCallback.Children2Callback, Object)
+     */
+    void processResult(int rc, String path, Object ctx, List<String> children, Stat stat);
+
+}
+
+/**
+ * This callback is used to retrieve the name and stat of the node.
+ */
+public interface Create2Callback : AsyncCallback {
+
+    /**
+     * Process the result of the asynchronous call.
+     *
+     * @param rc   The return code or the result of the call.
+     * @param path The path that we passed to asynchronous calls.
+     * @param ctx  Whatever context object that we passed to asynchronous calls.
+     * @param name The name of the Znode that was created. On success, <i>name</i>
+     *             and <i>path</i> are usually equal, unless a sequential node has
+     *             been created.
+     * @param stat {@link Stat} object of the node on given path.
+     *
+     * @see StringCallback
+     * @see ZooKeeper#create(String, byte[], List, CreateMode, AsyncCallback.Create2Callback, Object)
+     * @see ZooKeeper#create(String, byte[], List, CreateMode, AsyncCallback.Create2Callback, Object, long)
+     */
+    void processResult(int rc, String path, Object ctx, String name, Stat stat);
+
+}
+
+/**
+ * This callback is used to retrieve the name of the node.
+ */
+public interface StringCallback : AsyncCallback {
+
+    /**
+     * Process the result of the asynchronous call.
+     *
+     * <p>On success, rc is {@link KeeperException.Code#OK}.
+     *
+     * <p>On failure, rc is set to the corresponding failure code in {@link KeeperException}.
+     * <ul>
+     *  <li>{@link KeeperException.Code#NODEEXISTS}
+     *             - The node on give path already exists for some API calls.</li>
+     *  <li>{@link KeeperException.Code#NONODE}
+     *             - The node on given path doesn't exist for some API calls.</li>
+     *  <li>{@link KeeperException.Code#NOCHILDRENFOREPHEMERALS}
+     *             - An ephemeral node cannot have children. There is discussion in
+     *             community. It might be changed in the future.</li>
+     * </ul>
+     *
+     * @param rc   The return code or the result of the call.
+     * @param path The path that we passed to asynchronous calls.
+     * @param ctx  Whatever context object that we passed to asynchronous calls.
+     * @param name The name of the znode that was created. On success, <i>name</i>
+     *             and <i>path</i> are usually equal, unless a sequential node has
+     *             been created.
+     *
+     * @see ZooKeeper#create(String, byte[], List, CreateMode, AsyncCallback.StringCallback, Object)
+     */
+    void processResult(int rc, String path, Object ctx, String name);
+
+}
+
+/**
+ * This callback doesn't retrieve anything from the node. It is useful for some APIs
+ * that doesn't want anything sent back, e.g. {@link ZooKeeper#sync(String, AsyncCallback.VoidCallback, Object)}.
+ */
+public interface VoidCallback : AsyncCallback {
+
+    /**
+     * Process the result of the asynchronous call.
+     *
+     * <p>On success, rc is {@link KeeperException.Code#OK}.
+     *
+     * <p>On failure, rc is set to the corresponding failure code in {@link KeeperException}.
+     * <ul>
+     *  <li>{@link KeeperException.Code#NONODE}
+     *             - The node on given path doesn't exist for some API calls.</li>
+     *  <li>{@link KeeperException.Code#BADVERSION}
+     *             - The given version doesn't match the node's version for some API calls.</li>
+     *  <li>{@link KeeperException.Code#NOTEMPTY}
+     *             - the node has children and some API calls cannot succeed, e.g.
+     *             {@link ZooKeeper#delete(String, int, AsyncCallback.VoidCallback, Object)}.</li>
+     * </ul>
+     *
+     * @param rc   The return code or the result of the call.
+     * @param path The path that we passed to asynchronous calls.
+     * @param ctx  Whatever context object that we passed to asynchronous calls.
+     *
+     * @see ZooKeeper#delete(String, int, AsyncCallback.VoidCallback, Object)
+     * @see ZooKeeper#removeAllWatches(String, Watcher.WatcherType, boolean, AsyncCallback.VoidCallback, Object)
+     * @see ZooKeeper#removeWatches(String, Watcher, Watcher.WatcherType, boolean, AsyncCallback.VoidCallback, Object)
+     * @see ZooKeeper#sync(String, AsyncCallback.VoidCallback, Object)
+     *
+     */
+    void processResult(int rc, String path, Object ctx);
+
+}
+
+/**
+ * This callback is used to process the multiple results from a single multi call.
+ */
+public interface MultiCallback : AsyncCallback {
+
+    /**
+     * Process the result of the asynchronous call.
+     *
+     * <p>On success, rc is {@link KeeperException.Code#OK}. All {@code opResults} are
+     * non-{@link OpResult.ErrorResult}.
+     *
+     * <p>On failure, rc is a failure code in {@link KeeperException.Code}. Either
+     * {@code opResults} is null, or all {@code opResults} are {@link OpResult.ErrorResult}.
+     * All operations will be rolled back even if operations before the failing one were
+     * successful.
+     *
+     * @param rc   The return code or the result of the call.
+     * @param path The path that we passed to asynchronous calls.
+     * @param ctx  Whatever context object that we passed to asynchronous calls.
+     * @param opResults The list of results. One result for each operation, and the order
+     *                  matches that of input.
+     *
+     * @see ZooKeeper#multi(Iterable, AsyncCallback.MultiCallback, Object)
+     */
+    void processResult(int rc, String path, Object ctx, List<OpResult> opResults);
+
+}
+
+/**
+ * This callback is used to process the getEphemerals results from a single getEphemerals call.
+ *
+ * @see ZooKeeper#getEphemerals(AsyncCallback.EphemeralsCallback, Object)
+ * @see ZooKeeper#getEphemerals(String, AsyncCallback.EphemeralsCallback, Object)
+ *
+ * @since 3.6.0
+ */
+public interface EphemeralsCallback : AsyncCallback {
+
+    /**
+     * @param rc      The return code or the result of the call.
+     * @param ctx     Whatever context object that we passed to asynchronous calls.
+     * @param paths   The path that we passed to asynchronous calls.
+     */
+    void processResult(int rc, Object ctx, List<String> paths);
+
+}
