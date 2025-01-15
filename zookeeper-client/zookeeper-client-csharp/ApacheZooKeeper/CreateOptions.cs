@@ -1,6 +1,7 @@
 namespace ApacheZooKeeper;
 
 using ApacheZooKeeper.Data;
+using ApacheZooKeeper.Server;
 
 /**
  * Options for creating znode in ZooKeeper data tree.
@@ -39,7 +40,7 @@ public class CreateOptions {
         this.createMode = createMode;
         this.acl = acl;
         this.ttl = ttl;
-        //EphemeralType.validateTTL(createMode, ttl); // TODO: validateTTL
+        EphemeralTypeExtensions.validateTTL(createMode, ttl);
     }
 
     /**
