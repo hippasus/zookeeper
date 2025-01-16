@@ -28,12 +28,10 @@ public class BinaryInputArchive : InputArchive
     private readonly DataInput _in;
     private readonly int totalBufferSize;
 
-    /*
-    public static BinaryInputArchive getArchive(InputStream stream)
+    public static BinaryInputArchive getArchive(Stream stream)
     {
-        return new BinaryInputArchive(new DataInputStream(stream));
+        return new BinaryInputArchive(new DataInput(stream));
     }
-    */
 
     private class BinaryIndex : Index
     {

@@ -4,10 +4,10 @@ using ApacheZooKeeper.Data;
 
 public abstract class OpResult
 {
-    private int type;
+    private ZooDefs.OpCode type;
 
     private OpResult(ZooDefs.OpCode type) {
-        this.type = (int)type;
+        this.type = type;
     }
 
     /**
@@ -17,7 +17,7 @@ public abstract class OpResult
      * @see ZooDefs.OpCode
      * @return an integer identifying what kind of operation this result came from.
      */
-    public int getType() {
+    public ZooDefs.OpCode getType() {
         return type;
     }
 

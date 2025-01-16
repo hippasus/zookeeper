@@ -1,0 +1,173 @@
+namespace ApacheZooKeeper;
+
+using ApacheZooKeeper.Jute;
+using ApacheZooKeeper.Proto;
+
+using System.Collections;
+
+public class MultiResponse : IRecord, IEnumerable<OpResult>
+{
+    private List<OpResult> results = new();
+
+    public void add(OpResult x) {
+        results.Add(x);
+    }
+
+    public IEnumerator<OpResult> GetEnumerator()
+        => results.GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => results.GetEnumerator();
+
+    public int size()
+    {
+        return results.Count;
+    }
+
+    public void Serialize(IOutputArchive archive, string tag)
+    {
+        archive.startRecord(this, tag);
+
+        foreach (OpResult result in results) {
+            int err = result.getType() == ZooDefs.OpCode.error ? ((OpResult.ErrorResult) result).getErr() : 0;
+
+            new MultiHeader((int)result.getType(), false, err).serialize(archive, tag);
+
+            switch (result.getType()) {
+                case ZooDefs.OpCode.create:
+                    new CreateResponse(((OpResult.CreateResult) result).getPath()).serialize(archive, tag);
+                    break;
+                case ZooDefs.OpCode.create2:
+                    OpResult.CreateResult createResult = (OpResult.CreateResult) result;
+                    new Create2Response(createResult.getPath(), createResult.getStat()).serialize(archive, tag);
+                    break;
+                case ZooDefs.OpCode.delete:
+                case ZooDefs.OpCode.check:
+                    break;
+                case ZooDefs.OpCode.setData:
+                    new SetDataResponse(((OpResult.SetDataResult) result).getStat()).serialize(archive, tag);
+                    break;
+                case ZooDefs.OpCode.getChildren:
+                    new GetChildrenResponse(((OpResult.GetChildrenResult) result).getChildren()).serialize(archive, tag);
+                    break;
+                case ZooDefs.OpCode.getData:
+                    new GetDataResponse(
+                            ((OpResult.GetDataResult) result).getData(),
+                            ((OpResult.GetDataResult) result).getStat())
+                        .serialize(archive, tag);
+                    break;
+                case ZooDefs.OpCode.error:
+                    new ErrorResponse(((OpResult.ErrorResult) result).getErr()).serialize(archive, tag);
+                    break;
+                default:
+                    throw new IOException("Invalid type " + result.getType() + " in MultiResponse");
+            }
+        }
+        new MultiHeader(-1, true, -1).serialize(archive, tag);
+        archive.endRecord(this, tag);
+    }
+
+    public void Deserialize(IInputArchive archive, string tag)
+    {
+        results = new();
+
+        archive.startRecord(tag);
+        MultiHeader h = new MultiHeader();
+        h.deserialize(archive, tag);
+        while (!h.getDone()) {
+            switch ((ZooDefs.OpCode)h.getType()) {
+            case ZooDefs.OpCode.create:
+                CreateResponse cr = new CreateResponse();
+                cr.deserialize(archive, tag);
+                results.add(new OpResult.CreateResult(cr.getPath()));
+                break;
+
+            case ZooDefs.OpCode.create2:
+                Create2Response cr2 = new Create2Response();
+                cr2.deserialize(archive, tag);
+                results.add(new OpResult.CreateResult(cr2.getPath(), cr2.getStat()));
+                break;
+
+            case ZooDefs.OpCode.delete:
+                results.add(new OpResult.DeleteResult());
+                break;
+
+            case ZooDefs.OpCode.setData:
+                SetDataResponse sdr = new SetDataResponse();
+                sdr.deserialize(archive, tag);
+                results.add(new OpResult.SetDataResult(sdr.getStat()));
+                break;
+
+            case ZooDefs.OpCode.check:
+                results.add(new OpResult.CheckResult());
+                break;
+
+            case ZooDefs.OpCode.getChildren:
+                GetChildrenResponse gcr = new GetChildrenResponse();
+                gcr.deserialize(archive, tag);
+                results.add(new OpResult.GetChildrenResult(gcr.getChildren()));
+                break;
+
+            case ZooDefs.OpCode.getData:
+                GetDataResponse gdr = new GetDataResponse();
+                gdr.deserialize(archive, tag);
+                results.add(new OpResult.GetDataResult(gdr.getData(), gdr.getStat()));
+                break;
+
+            case ZooDefs.OpCode.error:
+                // TODO: need way to more cleanly serialize/deserialize exceptions
+                ErrorResponse er = new ErrorResponse();
+                er.deserialize(archive, tag);
+                results.add(new OpResult.ErrorResult(er.getErr()));
+                break;
+
+            default:
+                throw new IOException("Invalid type " + h.getType() + " in MultiResponse");
+            }
+            h.deserialize(archive, tag);
+        }
+        archive.endRecord(tag);
+    }
+
+    public List<OpResult> getResultList() {
+        return results;
+    }
+
+    /* TODO
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof MultiResponse)) {
+            return false;
+        }
+
+        MultiResponse other = (MultiResponse) o;
+
+        if (results != null) {
+            Iterator<OpResult> i = other.results.iterator();
+            for (OpResult result : results) {
+                if (i.hasNext()) {
+                    if (!result.equals(i.next())) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            return !i.hasNext();
+        } else {
+            return other.results == null;
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        int hash = results.size();
+        for (OpResult result : results) {
+            hash = (hash * 35) + result.hashCode();
+        }
+        return hash;
+    }
+    */
+}

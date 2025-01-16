@@ -16,7 +16,7 @@ public class ZKWatchManager
 
     private volatile Watcher defaultWatcher;
 
-    ZKWatchManager(bool disableAutoWatchReset, Watcher defaultWatcher) {
+    public ZKWatchManager(bool disableAutoWatchReset, Watcher defaultWatcher) {
         this.disableAutoWatchReset = disableAutoWatchReset;
         this.defaultWatcher = defaultWatcher;
     }

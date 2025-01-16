@@ -31,9 +31,8 @@ public class WatchDeregistration
      *            the result code of the operation that attempted to remove
      *            watch on the path.
      */
-    public IDictionary<EventType, HashSet<Watcher>> unregister(int rc) {
-        //return zkManager.removeWatcher(serverPath, watcher, watcherType, local, rc);
-        throw new NotImplementedException();
+    public Dictionary<EventType, HashSet<Watcher>> unregister(int rc) {
+        return zkManager.removeWatcher(serverPath, watcher, watcherType, local, rc);
     }
 
     /**

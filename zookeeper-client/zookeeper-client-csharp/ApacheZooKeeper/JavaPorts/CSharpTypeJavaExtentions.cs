@@ -1,5 +1,6 @@
 namespace ApacheZooKeeper;
 
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -32,6 +33,7 @@ internal static class CSharpTypeJavaExtentions
     }
 
     public static void clear<TKey, TValue>(this IDictionary<TKey, TValue> dic) => dic?.Clear();
+    public static IEnumerable<KeyValuePair<TKey, TValue>> entrySet<TKey, TValue>(this IDictionary<TKey, TValue> dic) => dic;
 
     public static int size<TKey, TValue>(this IDictionary<TKey, TValue> dic) => dic.Count;
     public static List<TKey> keyList<TKey, TValue>(this IDictionary<TKey, TValue> dic) => dic.Keys.ToList();
@@ -47,6 +49,10 @@ internal static class CSharpTypeJavaExtentions
         return value;
     }
 
+    public static void add<T>(this IList<T> list, T value) => list.Add(value);
+    public static bool isEmpty<T>(this IList<T> list) => list.Count == 0;
+    public static IEnumerator<T> iterator<T>(this IList<T> list) => list.GetEnumerator();
+
     public static void addAll<T>(this HashSet<T> hashSet, IEnumerable<T> other) => hashSet.UnionWith(other);
     public static int size<T>(this HashSet<T> hashSet) => hashSet.Count;
 
@@ -54,6 +60,20 @@ internal static class CSharpTypeJavaExtentions
     public static bool remove<T>(this HashSet<T> hashSet, T value) => hashSet.Remove(value);
 
     public static bool contains<T>(this HashSet<T> hashSet, T value) => hashSet.Contains(value);
+
+    public static void add<T>(this ConcurrentQueue<T> q, T value) => q.Enqueue(value);
+    public static T take<T>(this ConcurrentQueue<T> q) => q.TryDequeue(out var v) ? v : default;
+    public static bool isEmpty<T>(this ConcurrentQueue<T> q) => q.Count == 0;
+
+    public static int size<T>(this Queue<T> q) => q.Count;
+    public static T remove<T>(this Queue<T> q) => q.Dequeue();
+
+    public static void add<T>(this BlockingCollection<T> q, T value) => q.Add(value);
+    public static T take<T>(this BlockingCollection<T> q) => q.Take();
+    public static bool isEmpty<T>(this BlockingCollection<T> q) => q.Count == 0;
+
+    public static TKey getKey<TKey, TValue>(this KeyValuePair<TKey, TValue> pair) => pair.Key;
+    public static TValue getValue<TKey, TValue>(this KeyValuePair<TKey, TValue> pair) => pair.Value;
 
     public static StringBuilder append(this StringBuilder sb, string value)
     {
@@ -73,4 +93,7 @@ internal static class CSharpTypeJavaExtentions
     public static byte[] toByteArray(this MemoryStream stream) => stream.ToArray();
 
     public static TResult apply<T, TResult>(this Func<T, TResult> func, T arg) => func(arg);
+
+    public static bool hasNext<T>(this IEnumerator<T> enumerator) => enumerator.MoveNext();
+    public static T next<T>(this IEnumerator<T> enumerator) => enumerator.Current;
 }
