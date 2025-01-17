@@ -1,6 +1,8 @@
 namespace ApacheZooKeeper.JavaPorts;
 
-public class LinkedBlockingDeque<T>
+using System.Collections;
+
+public class LinkedBlockingDeque<T> : IEnumerable<T>
 {
     private readonly Node _head;
     private readonly Node _tail;
@@ -69,6 +71,8 @@ public class LinkedBlockingDeque<T>
             return true;
         }
     }
+
+    public void add(T item) => addLast(item);
 
     public void addLast(T item)
     {
@@ -301,5 +305,54 @@ public class LinkedBlockingDeque<T>
         {
             Item = item;
         }
+    }
+
+    private class LinkedBlockingDequeEnumerator : IEnumerator<T>
+    {
+        private readonly LinkedBlockingDeque<T> _instance;
+        private Node _currentNode;
+
+        public LinkedBlockingDequeEnumerator(LinkedBlockingDeque<T> instance)
+        {
+            _instance = instance ?? throw new ArgumentNullException(nameof(instance));
+            _currentNode = instance._head;
+        }
+
+        public bool MoveNext()
+        {
+            var nextNode = _currentNode.Next;
+            if (nextNode != null && nextNode != _instance._tail)
+            {
+                return false;
+            }
+
+            _currentNode = nextNode;
+
+            return true;
+        }
+
+        public void Reset()
+        {
+            _currentNode = _instance._head;
+        }
+
+        public T Current => _currentNode.Item;
+        object IEnumerator.Current => Current;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    public IEnumerator<T> iterator() => GetEnumerator();
+
+    public IEnumerator<T> GetEnumerator()
+    {
+        return new LinkedBlockingDequeEnumerator(this);
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 }

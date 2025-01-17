@@ -42,7 +42,7 @@ public class ClientCnxn {
 
     public class AuthData {
 
-        AuthData(String scheme, byte[] data) {
+        internal AuthData(String scheme, byte[] data) {
             this.scheme = scheme;
             this.data = data;
         }
@@ -264,6 +264,10 @@ public class ClientCnxn {
             Finished?.Invoke(this, EventArgs.Empty);
         }
 
+        public void wait(long timeout = -1)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     /**
@@ -705,14 +709,15 @@ public class ClientCnxn {
             return;
         }
         switch (state) {
-        case AUTH_FAILED:
+        case States.AUTH_FAILED:
             p.replyHeader.setErr(KeeperException.Code.AUTHFAILED.intValue());
             break;
-        case CLOSED:
+        case States.CLOSED:
             p.replyHeader.setErr(KeeperException.Code.SESSIONEXPIRED.intValue());
             break;
         default:
             p.replyHeader.setErr(KeeperException.Code.CONNECTIONLOSS.intValue());
+            break;
         }
         finishPacket(p);
     }
@@ -783,7 +788,7 @@ public class ClientCnxn {
      * This class services the outgoing request queue and generates the heart
      * beats. It also spawns the ReadThread.
      */
-    class SendThread : ZooKeeperThread {
+    internal class SendThread : ZooKeeperThread {
         private ClientCnxn _clientCnxn;
 
         private long lastPingSentNs;
@@ -873,7 +878,7 @@ public class ClientCnxn {
             }
         }
 
-        SendThread(ClientCnxn clientCnxn, ClientCnxnSocket clientCnxnSocket) {
+        internal SendThread(ClientCnxn clientCnxn, ClientCnxnSocket clientCnxnSocket) {
             _clientCnxn = clientCnxn;
             changeZkState(States.CONNECTING);
             this.clientCnxnSocket = clientCnxnSocket;
@@ -901,7 +906,7 @@ public class ClientCnxn {
             _clientCnxn.state = newState;
         }
 
-        ClientCnxnSocket getClientCnxnSocket() {
+        internal ClientCnxnSocket getClientCnxnSocket() {
             return clientCnxnSocket;
         }
 
@@ -988,7 +993,7 @@ public class ClientCnxn {
                 }
             }
 
-            foreach (AuthData id in authInfo) {
+            foreach (AuthData id in _clientCnxn.authInfo) {
                 _clientCnxn.outgoingQueue.addFirst(
                     new Packet(
                         new RequestHeader(ClientCnxn.AUTHPACKET_XID, (int)OpCode.auth),
@@ -1025,7 +1030,7 @@ public class ClientCnxn {
             saslLoginFailed = false;
             if (!isFirstConnect) {
                 try {
-                    Thread.Sleep(ThreadLocalRandom.current().nextLong(1000));
+                    Thread.Sleep(ThreadLocalRandom.current().nextInt(1000));
                 } catch (ThreadInterruptedException e) {
                     LOG.warn("Unexpected exception", e);
                 }
@@ -1033,12 +1038,15 @@ public class ClientCnxn {
             changeZkState(States.CONNECTING);
 
             String hostPort = addr.getHostString() + ":" + addr.getPort();
-            MDC.put("myid", hostPort);
+            //MDC.put("myid", hostPort); //TODO
             setName(getName().replaceAll("\\(.*\\)", "(" + hostPort + ")"));
-            if (clientConfig.isSaslClientEnabled()) {
+            if (_clientCnxn.clientConfig.isSaslClientEnabled()) {
                 try {
+                    // TODO:
+                    /*
                     zooKeeperSaslClient = new ZooKeeperSaslClient(
                         SaslServerPrincipal.getServerPrincipal(addr, clientConfig), clientConfig, loginRef);
+                    */
                 } catch (LoginException e) {
                     // An authentication error occurred when the SASL client tried to initialize:
                     // for Kerberos this means that the client failed to authenticate with the KDC.
@@ -1048,7 +1056,7 @@ public class ClientCnxn {
                         "SASL configuration failed. "
                             + "Will continue connection to Zookeeper server without "
                             + "SASL authentication, if Zookeeper server allows it.", e);
-                    eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, Watcher.Event.KeeperState.AuthFailed, null));
+                    _clientCnxn.eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, Watcher.Event.KeeperState.AuthFailed, null));
                     saslLoginFailed = true;
                 }
             }
@@ -1058,47 +1066,47 @@ public class ClientCnxn {
         }
 
         private void logStartConnect(InetSocketAddress addr) {
-            LOG.info("Opening socket connection to server {}.", addr);
+            LOG.info("Opening socket connection to server {0}.", addr);
             if (zooKeeperSaslClient != null) {
-                LOG.info("SASL config status: {}", zooKeeperSaslClient.getConfigStatus());
+                LOG.info("SASL config status: {0}", zooKeeperSaslClient.getConfigStatus());
             }
         }
 
         protected override void run(CancellationToken ct) {
-            clientCnxnSocket.introduce(this, sessionId, outgoingQueue);
+            clientCnxnSocket.introduce(this, _clientCnxn.sessionId, _clientCnxn.outgoingQueue);
             clientCnxnSocket.updateNow();
             clientCnxnSocket.updateLastSendAndHeard();
             int to;
-            long lastPingRwServer = Time.currentElapsedTime();
+            long lastPingRwServer = TimeExtensions.currentElapsedTime();
             int MAX_SEND_PING_INTERVAL = 10000; //10 seconds
             InetSocketAddress serverAddress = null;
-            while (state.isAlive()) {
+            while (_clientCnxn.state.isAlive()) {
                 try {
                     if (!clientCnxnSocket.isConnected()) {
                         // don't re-establish connection if we are closing
-                        if (closing) {
+                        if (_clientCnxn.closing) {
                             break;
                         }
                         if (rwServerAddress != null) {
                             serverAddress = rwServerAddress;
                             rwServerAddress = null;
                         } else {
-                            serverAddress = hostProvider.next(1000);
+                            serverAddress = _clientCnxn.hostProvider.next(1000);
                         }
-                        onConnecting(serverAddress);
+                        _clientCnxn.onConnecting(serverAddress);
                         startConnect(serverAddress);
                         // Update now to start the connection timer right after we make a connection attempt
                         clientCnxnSocket.updateNow();
                         clientCnxnSocket.updateLastSend();
                     }
 
-                    if (state.isConnected()) {
+                    if (_clientCnxn.state.isConnected()) {
                         // determine whether we need to send an AuthFailed event.
                         if (zooKeeperSaslClient != null) {
-                            boolean sendAuthEvent = false;
+                            bool sendAuthEvent = false;
                             if (zooKeeperSaslClient.getSaslState() == ZooKeeperSaslClient.SaslState.INITIAL) {
                                 try {
-                                    zooKeeperSaslClient.initialize(ClientCnxn.this);
+                                    zooKeeperSaslClient.initialize(_clientCnxn);
                                 } catch (SaslException e) {
                                     LOG.error("SASL authentication with Zookeeper Quorum member failed.", e);
                                     changeZkState(States.AUTH_FAILED);
@@ -1119,37 +1127,37 @@ public class ClientCnxn {
                             }
 
                             if (sendAuthEvent) {
-                                eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, authState, null));
-                                if (state == States.AUTH_FAILED) {
-                                    eventThread.queueEventOfDeath();
+                                _clientCnxn.eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, authState, null));
+                                if (_clientCnxn.state == States.AUTH_FAILED) {
+                                    _clientCnxn.eventThread.queueEventOfDeath();
                                 }
                             }
                         }
-                        to = readTimeout - clientCnxnSocket.getIdleRecv();
+                        to = _clientCnxn.readTimeout - clientCnxnSocket.getIdleRecv();
                     } else {
-                        to = connectTimeout - clientCnxnSocket.getIdleSend();
+                        to = _clientCnxn.connectTimeout - clientCnxnSocket.getIdleSend();
                     }
 
-                    int expiration = expirationTimeout - clientCnxnSocket.getIdleRecv();
+                    int expiration = _clientCnxn.expirationTimeout - clientCnxnSocket.getIdleRecv();
                     if (expiration <= 0) {
-                        String warnInfo = String.format(
-                            "Client session timed out, have not heard from server in %dms for session id 0x%s",
+                        String warnInfo = String.Format(
+                            "Client session timed out, have not heard from server in {0}ms for session id 0x{1}",
                             clientCnxnSocket.getIdleRecv(),
-                            Long.toHexString(sessionId));
+                            Long.toHexString(_clientCnxn.sessionId));
                         LOG.warn(warnInfo);
                         changeZkState(States.CLOSED);
                         throw new SessionTimeoutException(warnInfo);
                     } else if (to <= 0) {
-                        String warnInfo = String.format(
-                            "Client connection timed out, have not heard from server in %dms for session id 0x%s",
+                        String warnInfo = String.Format(
+                            "Client connection timed out, have not heard from server in {0}ms for session id 0x{1}",
                             clientCnxnSocket.getIdleRecv(),
-                            Long.toHexString(sessionId));
+                            Long.toHexString(_clientCnxn.sessionId));
                         throw new ConnectionTimeoutException(warnInfo);
                     }
-                    if (state.isConnected()) {
+                    if (_clientCnxn.state.isConnected()) {
                         //1000(1 second) is to prevent race condition missing to send the second ping
                         //also make sure not to send too many pings when readTimeout is small
-                        int timeToNextPing = readTimeout / 2
+                        int timeToNextPing = _clientCnxn.readTimeout / 2
                                              - clientCnxnSocket.getIdleSend()
                                              - ((clientCnxnSocket.getIdleSend() > 1000) ? 1000 : 0);
                         //send a ping request either time is due or no packet sent out within MAX_SEND_PING_INTERVAL
@@ -1164,33 +1172,33 @@ public class ClientCnxn {
                     }
 
                     // If we are in read-only mode, seek for read/write server
-                    if (state == States.CONNECTEDREADONLY) {
-                        long now = Time.currentElapsedTime();
+                    if (_clientCnxn.state == States.CONNECTEDREADONLY) {
+                        long now = TimeExtensions.currentElapsedTime();
                         int idlePingRwServer = (int) (now - lastPingRwServer);
                         if (idlePingRwServer >= pingRwTimeout) {
                             lastPingRwServer = now;
                             idlePingRwServer = 0;
-                            pingRwTimeout = Math.min(2 * pingRwTimeout, maxPingRwTimeout);
+                            pingRwTimeout = Math.Min(2 * pingRwTimeout, maxPingRwTimeout);
                             pingRwServer();
                         }
-                        to = Math.min(to, pingRwTimeout - idlePingRwServer);
+                        to = Math.Min(to, pingRwTimeout - idlePingRwServer);
                     }
 
-                    clientCnxnSocket.doTransport(to, pendingQueue, ClientCnxn.this);
-                } catch (Throwable e) {
-                    if (closing) {
+                    clientCnxnSocket.doTransport(to, _clientCnxn.pendingQueue, _clientCnxn);
+                } catch (Exception e) {
+                    if (_clientCnxn.closing) {
                         // closing so this is expected
                         if (LOG.isDebugEnabled()) {
                             LOG.debug(
-                                "An exception was thrown while closing send thread for session 0x{}.",
-                                Long.toHexString(getSessionId()), e);
+                                "An exception was thrown while closing send thread for session 0x{0}.",
+                                Long.toHexString(_clientCnxn.getSessionId()), e);
                         }
                         break;
                     } else {
                         LOG.warn(
-                            "Session 0x{} for server {}, Closing socket connection. "
+                            "Session 0x{0} for server {1}, Closing socket connection. "
                                 + "Attempting reconnect except it is a SessionExpiredException or SessionTimeoutException.",
-                            Long.toHexString(getSessionId()),
+                            Long.toHexString(_clientCnxn.getSessionId()),
                             serverAddress,
                             e);
 
@@ -1207,15 +1215,15 @@ public class ClientCnxn {
                 cleanup();
             }
             clientCnxnSocket.close();
-            if (state.isAlive()) {
-                eventThread.queueEvent(new WatchedEvent(Event.EventType.None, Event.KeeperState.Disconnected, null));
+            if (_clientCnxn.state.isAlive()) {
+                _clientCnxn.eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, Watcher.Event.KeeperState.Disconnected, null));
             }
-            if (closing) {
-                eventThread.queueEvent(new WatchedEvent(Event.EventType.None, KeeperState.Closed, null));
-            } else if (state == States.CLOSED) {
-                eventThread.queueEvent(new WatchedEvent(Event.EventType.None, KeeperState.Expired, null));
+            if (_clientCnxn.closing) {
+                _clientCnxn.eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, KeeperState.Closed, null));
+            } else if (_clientCnxn.state == States.CLOSED) {
+                _clientCnxn.eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, KeeperState.Expired, null));
             }
-            eventThread.queueEventOfDeath();
+            _clientCnxn.eventThread.queueEventOfDeath();
 
             Login l = loginRef.getAndSet(null);
             if (l != null) {
@@ -1224,22 +1232,25 @@ public class ClientCnxn {
             ZooTrace.logTraceMessage(
                 LOG,
                 ZooTrace.getTextTraceLevel(),
-                "SendThread exited loop for session: 0x" + Long.toHexString(getSessionId()));
+                "SendThread exited loop for session: 0x" + Long.toHexString(_clientCnxn.getSessionId()));
         }
 
         private void cleanAndNotifyState() {
             cleanup();
-            if (state.isAlive()) {
-                eventThread.queueEvent(new WatchedEvent(Event.EventType.None, Event.KeeperState.Disconnected, null));
+            if (_clientCnxn.state.isAlive()) {
+                _clientCnxn.eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, Watcher.Event.KeeperState.Disconnected, null));
             }
             clientCnxnSocket.updateNow();
         }
 
         private void pingRwServer() {
+            //TODO:
+            throw new NotImplementedException();
+            /*
             String result = null;
-            InetSocketAddress addr = hostProvider.next(0);
+            InetSocketAddress addr = _clientCnxn.hostProvider.next(0);
 
-            LOG.info("Checking server {} for being r/w. Timeout {}", addr, pingRwTimeout);
+            LOG.info("Checking server {0} for being r/w. Timeout {1}", addr, pingRwTimeout);
             try {
                 result = FourLetterWordMain.send4LetterWord(addr.getHostString(), addr.getPort(), "isro", clientConfig, 1000);
             } catch (ConnectException e) {
@@ -1257,24 +1268,25 @@ public class ClientCnxn {
                 throw new RWServerFoundException("Majority server found at "
                                                  + addr.getHostString() + ":" + addr.getPort());
             }
+            */
         }
 
         private void cleanup() {
             clientCnxnSocket.cleanup();
-            lock (pendingQueue) {
-                for (Packet p : pendingQueue) {
-                    conLossPacket(p);
+            lock (_clientCnxn.pendingQueue) {
+                foreach (Packet p in _clientCnxn.pendingQueue) {
+                    _clientCnxn.conLossPacket(p);
                 }
-                pendingQueue.clear();
+                _clientCnxn.pendingQueue.clear();
             }
             // We can't call outgoingQueue.clear() here because
             // between iterating and clear up there might be new
             // packets added in queuePacket().
-            Iterator<Packet> iter = _clientCnxn.outgoingQueue.iterator();
+            var iter = _clientCnxn.outgoingQueue.iterator();
             while (iter.hasNext()) {
                 Packet p = iter.next();
-                conLossPacket(p);
-                iter.remove();
+                _clientCnxn.conLossPacket(p);
+                _clientCnxn.outgoingQueue.pollFirst();
             }
         }
 
@@ -1327,7 +1339,7 @@ public class ClientCnxn {
             try {
                 changeZkState(States.CLOSED);
             } catch (IOException e) {
-                LOG.warn("Connection close fails when migrates state from {} to CLOSED",
+                LOG.warn("Connection close fails when migrates state from {0} to CLOSED",
                         getZkState());
             }
             clientCnxnSocket.onClosing();
@@ -1372,4 +1384,264 @@ public class ClientCnxn {
         }
     }
 
+    /**
+     * Shutdown the send/event threads. This method should not be called
+     * directly - rather it should be called as part of close operation. This
+     * method is primarily here to allow the tests to verify disconnection
+     * behavior.
+     */
+    public void disconnect() {
+        LOG.debug("Disconnecting client for session: 0x{}", Long.toHexString(getSessionId()));
+
+        sendThread.close();
+        try {
+            sendThread.join();
+        } catch (ThreadInterruptedException ex) {
+            LOG.warn("Got interrupted while waiting for the sender thread to close", ex);
+        }
+        eventThread.queueEventOfDeath();
+    }
+
+    /**
+     * Close the connection, which includes; send session disconnect to the
+     * server, shutdown the send/event threads.
+     *
+     * @throws IOException
+     */
+    public void close() {
+        LOG.debug("Closing client for session: 0x{0}", Long.toHexString(getSessionId()));
+
+        try {
+            RequestHeader h = new RequestHeader();
+            h.setType((int)ZooDefs.OpCode.closeSession);
+
+            submitRequest(h, null, null, null);
+        } catch (ThreadInterruptedException e) {
+            // ignore, close the send/event threads
+        } finally {
+            disconnect();
+        }
+    }
+
+    // @VisibleForTesting
+    protected int xid = 1;
+
+    // @VisibleForTesting
+    volatile States state = States.NOT_CONNECTED;
+
+    /*
+     * getXid() is called externally by ClientCnxnNIO::doIO() when packets are sent from the outgoingQueue to
+     * the server. Thus, getXid() must be public.
+     */
+    public int getXid() {
+        lock (this) {
+        // Avoid negative cxid values.  In particular, cxid values of -4, -2, and -1 are special and
+        // must not be used for requests -- see SendThread.readResponse.
+        // Skip from MAX to 1.
+        if (xid == int.MaxValue) {
+            xid = 1;
+        }
+        return xid++;
+        }
+    }
+
+    public ReplyHeader submitRequest(
+        RequestHeader h,
+        Record request,
+        Record response,
+        WatchRegistration watchRegistration) {
+        return submitRequest(h, request, response, watchRegistration, null);
+    }
+
+    public ReplyHeader submitRequest(
+        RequestHeader h,
+        Record request,
+        Record response,
+        WatchRegistration watchRegistration,
+        WatchDeregistration watchDeregistration) {
+        ReplyHeader r = new ReplyHeader();
+        Packet packet = queuePacket(
+            h,
+            r,
+            request,
+            response,
+            null,
+            null,
+            null,
+            null,
+            watchRegistration,
+            watchDeregistration);
+        lock (packet) {
+            if (requestTimeout > 0) {
+                // Wait for request completion with timeout
+                waitForPacketFinish(r, packet);
+            } else {
+                // Wait for request completion infinitely
+                while (!packet.finished) {
+                    packet.wait();
+                }
+            }
+        }
+        if (r.getErr() == KeeperException.Code.REQUESTTIMEOUT.intValue()) {
+            sendThread.cleanAndNotifyState();
+        }
+        return r;
+    }
+
+    /**
+     * Wait for request completion with timeout.
+     */
+    private void waitForPacketFinish(ReplyHeader r, Packet packet) {
+        long waitStartTime = TimeExtensions.currentElapsedTime();
+        while (!packet.finished) {
+            packet.wait(requestTimeout);
+            if (!packet.finished && ((TimeExtensions.currentElapsedTime() - waitStartTime) >= requestTimeout)) {
+                LOG.error("Timeout error occurred for the packet '{}'.", packet);
+                r.setErr(KeeperException.Code.REQUESTTIMEOUT.intValue());
+                break;
+            }
+        }
+    }
+
+    public void saslCompleted() {
+        sendThread.getClientCnxnSocket().saslCompleted();
+    }
+
+    public void sendPacket(Record request, Record response, AsyncCallback cb, int opCode) {
+        // Generate Xid now because it will be sent immediately,
+        // by call to sendThread.sendPacket() below.
+        int xid = getXid();
+        RequestHeader h = new RequestHeader();
+        h.setXid(xid);
+        h.setType(opCode);
+
+        ReplyHeader r = new ReplyHeader();
+        r.setXid(xid);
+
+        Packet p = new Packet(h, r, request, response, null);
+        p.cb = cb;
+        sendThread.sendPacket(p);
+    }
+
+    public Packet queuePacket(
+        RequestHeader h,
+        ReplyHeader r,
+        Record request,
+        Record response,
+        AsyncCallback cb,
+        String clientPath,
+        String serverPath,
+        Object ctx,
+        WatchRegistration watchRegistration) {
+        return queuePacket(h, r, request, response, cb, clientPath, serverPath, ctx, watchRegistration, null);
+    }
+
+    public Packet queuePacket(
+        RequestHeader h,
+        ReplyHeader r,
+        Record request,
+        Record response,
+        AsyncCallback cb,
+        String clientPath,
+        String serverPath,
+        Object ctx,
+        WatchRegistration watchRegistration,
+        WatchDeregistration watchDeregistration) {
+        Packet packet = null;
+
+        // Note that we do not generate the Xid for the packet yet. It is
+        // generated later at send-time, by an implementation of ClientCnxnSocket::doIO(),
+        // where the packet is actually sent.
+        packet = new Packet(h, r, request, response, watchRegistration);
+        packet.cb = cb;
+        packet.ctx = ctx;
+        packet.clientPath = clientPath;
+        packet.serverPath = serverPath;
+        packet.watchDeregistration = watchDeregistration;
+        // The synchronized block here is for two purpose:
+        // 1. synchronize with the readonly cleanup() in SendThread.run() to avoid race
+        // 2. synchronized against each packet. So if a closeSession packet is added,
+        // later packet will be notified.
+        lock (outgoingQueue) {
+            if (!state.isAlive() || closing) {
+                conLossPacket(packet);
+            } else {
+                // If the client is asking to close the session then
+                // mark as closing
+                if (h.getType() == (int)OpCode.closeSession) {
+                    closing = true;
+                }
+                outgoingQueue.add(packet);
+            }
+        }
+        sendThread.getClientCnxnSocket().packetAdded();
+        return packet;
+    }
+
+    public void addAuthInfo(String scheme, byte[] auth) {
+        if (!state.isAlive()) {
+            return;
+        }
+        authInfo.add(new AuthData(scheme, auth));
+        queuePacket(
+            new RequestHeader(ClientCnxn.AUTHPACKET_XID, (int)OpCode.auth),
+            null,
+            new AuthPacket(0, scheme, auth),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    }
+
+    internal States getState() {
+        return state;
+    }
+
+    private class LocalCallback {
+
+        internal readonly AsyncCallback cb;
+        internal readonly int rc;
+        internal readonly String path;
+        internal readonly Object ctx;
+
+        public LocalCallback(AsyncCallback cb, int rc, String path, Object ctx) {
+            this.cb = cb;
+            this.rc = rc;
+            this.path = path;
+            this.ctx = ctx;
+        }
+
+    }
+
+    private void initRequestTimeout() {
+        try {
+            /*
+            requestTimeout = clientConfig.getLong(
+                ZKClientConfig.ZOOKEEPER_REQUEST_TIMEOUT,
+                ZKClientConfig.ZOOKEEPER_REQUEST_TIMEOUT_DEFAULT);
+            */
+            requestTimeout = 0;
+            /*
+            LOG.info(
+                "{0} value is {1}. feature enabled={1}",
+                ZKClientConfig.ZOOKEEPER_REQUEST_TIMEOUT,
+                requestTimeout,
+                requestTimeout > 0);
+            */
+        } catch (FormatException e) {
+            /*
+            LOG.error(
+                "Configured value {0} for property {1} can not be parsed to long.",
+                clientConfig.getProperty(ZKClientConfig.ZOOKEEPER_REQUEST_TIMEOUT),
+                ZKClientConfig.ZOOKEEPER_REQUEST_TIMEOUT);
+            */
+            throw;
+        }
+    }
+
+    public ZooKeeperSaslClient getZooKeeperSaslClient() {
+        return sendThread.getZooKeeperSaslClient();
+    }
 }

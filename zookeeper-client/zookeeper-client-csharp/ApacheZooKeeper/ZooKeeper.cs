@@ -176,7 +176,7 @@ public class ZooKeeper : IDisposable
     /**
      * Register a watcher for a particular path.
      */
-    internal abstract class WatchRegistration {
+    public abstract class WatchRegistration {
 
         private Watcher watcher;
         private String serverPath;

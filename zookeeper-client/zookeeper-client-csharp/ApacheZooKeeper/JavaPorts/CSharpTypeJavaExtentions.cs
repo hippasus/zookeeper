@@ -49,6 +49,8 @@ internal static class CSharpTypeJavaExtentions
         return value;
     }
 
+    public static void add<T>(this ConcurrentBag<T> bag, T value) => bag.Add(value);
+
     public static void add<T>(this IList<T> list, T value) => list.Add(value);
     public static bool isEmpty<T>(this IList<T> list) => list.Count == 0;
     public static IEnumerator<T> iterator<T>(this IList<T> list) => list.GetEnumerator();
@@ -65,6 +67,7 @@ internal static class CSharpTypeJavaExtentions
     public static T take<T>(this ConcurrentQueue<T> q) => q.TryDequeue(out var v) ? v : default;
     public static bool isEmpty<T>(this ConcurrentQueue<T> q) => q.Count == 0;
 
+    public static void clear<T>(this Queue<T> q) => q.Clear();
     public static int size<T>(this Queue<T> q) => q.Count;
     public static T remove<T>(this Queue<T> q) => q.Dequeue();
 
@@ -96,4 +99,7 @@ internal static class CSharpTypeJavaExtentions
 
     public static bool hasNext<T>(this IEnumerator<T> enumerator) => enumerator.MoveNext();
     public static T next<T>(this IEnumerator<T> enumerator) => enumerator.Current;
+
+    public static int nextInt(this Random random, int maxValue) => Convert.ToInt32(random.NextDouble() * maxValue);
+    public static long nextLong(this Random random, long maxValue) => Convert.ToInt64(random.NextDouble() * maxValue);
 }
