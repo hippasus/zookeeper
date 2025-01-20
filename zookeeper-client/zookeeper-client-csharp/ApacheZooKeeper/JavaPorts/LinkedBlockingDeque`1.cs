@@ -293,7 +293,7 @@ public class LinkedBlockingDeque<T> : IEnumerable<T>
         return oldLastNode;
     }
 
-    public int Count => _count;
+    public int size() => _count;
 
     private class Node
     {
@@ -344,7 +344,7 @@ public class LinkedBlockingDeque<T> : IEnumerable<T>
         }
     }
 
-    public IEnumerator<T> iterator() => GetEnumerator();
+    public Iterator<T> iterator() => new(this);
 
     public IEnumerator<T> GetEnumerator()
     {

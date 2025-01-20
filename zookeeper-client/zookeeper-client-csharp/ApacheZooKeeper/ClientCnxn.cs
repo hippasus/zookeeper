@@ -19,6 +19,7 @@ using WatchRegistration = ZooKeeper.WatchRegistration;
 
 public class ClientCnxn {
     private static readonly ILogger LOG = LoggerManager.GetLogger<ClientCnxn>();
+    private readonly object _lock = new();
 
     /* ZOOKEEPER-706: If a session has a large number of watches set then
      * attempting to re-establish those watches after a connection loss may
@@ -151,13 +152,11 @@ public class ClientCnxn {
      return negotiatedSessionTimeout;
     }
 
-    //TODO:
-    /*
     public override String ToString() {
      StringBuilder sb = new StringBuilder();
 
-     IPEndPoint local = sendThread.getClientCnxnSocket().getLocalSocketAddress();
-     IPEndPoint remote = sendThread.getClientCnxnSocket().getRemoteSocketAddress();
+     var local = sendThread.getClientCnxnSocket().getLocalSocketAddress();
+     var remote = sendThread.getClientCnxnSocket().getRemoteSocketAddress();
      sb.append("sessionid:0x").append(Long.toHexString(getSessionId()))
       .append(" local:").append(local)
       .append(" remoteserver:").append(remote)
@@ -171,7 +170,6 @@ public class ClientCnxn {
 
      return sb.toString();
     }
-    */
 
 
     /**
@@ -392,7 +390,7 @@ public class ClientCnxn {
     class EventThread : ZooKeeperThread {
         private readonly ClientCnxn _clientCnxn;
 
-        private readonly BlockingCollection<object> waitingEvents = new BlockingCollection<object>();
+        internal readonly BlockingCollection<object> waitingEvents = new();
 
         /** This is really the queued session state until the event
          * thread actually processes the event and hands it to the watcher.
@@ -788,8 +786,9 @@ public class ClientCnxn {
      * This class services the outgoing request queue and generates the heart
      * beats. It also spawns the ReadThread.
      */
-    internal class SendThread : ZooKeeperThread {
+    public class SendThread : ZooKeeperThread {
         private ClientCnxn _clientCnxn;
+        private readonly object _lock = new();
 
         private long lastPingSentNs;
         private readonly ClientCnxnSocket clientCnxnSocket;
@@ -807,7 +806,7 @@ public class ClientCnxn {
             case PING_XID:
                 LOG.debug("Got ping response for session id: 0x{} after {}ms.",
                     Long.toHexString(_clientCnxn.sessionId),
-                    ((TimeExtensions.nanoTime() - lastPingSentNs) / 1000000));
+                    ((Time.nanoTime() - lastPingSentNs) / 1000000));
                 return;
               case AUTHPACKET_XID:
                 LOG.debug("Got auth session id: 0x{}", Long.toHexString(_clientCnxn.sessionId));
@@ -894,16 +893,21 @@ public class ClientCnxn {
          * @return
          */
         ZooKeeper.States getZkState() {
-            return _clientCnxn.state;
+            lock (_lock) {
+                return _clientCnxn.state;
+            }
         }
 
         void changeZkState(ZooKeeper.States newState) {
-            if (!_clientCnxn.state.isAlive() && newState == States.CONNECTING) {
-                throw new IOException(
+            lock (_lock) {
+                if (!_clientCnxn.state.isAlive() && newState == States.CONNECTING) {
+                    throw new IOException(
                         "Connection has already been closed and reconnection is not allowed");
+                }
+
+                // It's safer to place state modification at the end.
+                _clientCnxn.state = newState;
             }
-            // It's safer to place state modification at the end.
-            _clientCnxn.state = newState;
         }
 
         internal ClientCnxnSocket getClientCnxnSocket() {
@@ -1008,7 +1012,7 @@ public class ClientCnxn {
         }
 
         private void sendPing() {
-            lastPingSentNs = TimeExtensions.nanoTime();
+            lastPingSentNs = Time.nanoTime();
             RequestHeader h = new RequestHeader(ClientCnxn.PING_XID, (int)OpCode.ping);
             _clientCnxn.queuePacket(h, null, null, null, null, null, null, null, null);
         }
@@ -1077,7 +1081,7 @@ public class ClientCnxn {
             clientCnxnSocket.updateNow();
             clientCnxnSocket.updateLastSendAndHeard();
             int to;
-            long lastPingRwServer = TimeExtensions.currentElapsedTime();
+            long lastPingRwServer = Time.currentElapsedTime();
             int MAX_SEND_PING_INTERVAL = 10000; //10 seconds
             InetSocketAddress serverAddress = null;
             while (_clientCnxn.state.isAlive()) {
@@ -1173,7 +1177,7 @@ public class ClientCnxn {
 
                     // If we are in read-only mode, seek for read/write server
                     if (_clientCnxn.state == States.CONNECTEDREADONLY) {
-                        long now = TimeExtensions.currentElapsedTime();
+                        long now = Time.currentElapsedTime();
                         int idlePingRwServer = (int) (now - lastPingRwServer);
                         if (idlePingRwServer >= pingRwTimeout) {
                             lastPingRwServer = now;
@@ -1434,7 +1438,7 @@ public class ClientCnxn {
      * the server. Thus, getXid() must be public.
      */
     public int getXid() {
-        lock (this) {
+        lock (_lock) {
         // Avoid negative cxid values.  In particular, cxid values of -4, -2, and -1 are special and
         // must not be used for requests -- see SendThread.readResponse.
         // Skip from MAX to 1.
@@ -1492,10 +1496,10 @@ public class ClientCnxn {
      * Wait for request completion with timeout.
      */
     private void waitForPacketFinish(ReplyHeader r, Packet packet) {
-        long waitStartTime = TimeExtensions.currentElapsedTime();
+        long waitStartTime = Time.currentElapsedTime();
         while (!packet.finished) {
             packet.wait(requestTimeout);
-            if (!packet.finished && ((TimeExtensions.currentElapsedTime() - waitStartTime) >= requestTimeout)) {
+            if (!packet.finished && ((Time.currentElapsedTime() - waitStartTime) >= requestTimeout)) {
                 LOG.error("Timeout error occurred for the packet '{}'.", packet);
                 r.setErr(KeeperException.Code.REQUESTTIMEOUT.intValue());
                 break;

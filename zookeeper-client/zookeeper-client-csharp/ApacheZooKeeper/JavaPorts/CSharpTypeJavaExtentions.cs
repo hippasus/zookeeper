@@ -1,5 +1,7 @@
 namespace ApacheZooKeeper;
 
+using ApacheZooKeeper.JavaPorts;
+
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -53,7 +55,7 @@ internal static class CSharpTypeJavaExtentions
 
     public static void add<T>(this IList<T> list, T value) => list.Add(value);
     public static bool isEmpty<T>(this IList<T> list) => list.Count == 0;
-    public static IEnumerator<T> iterator<T>(this IList<T> list) => list.GetEnumerator();
+    public static Iterator<T> iterator<T>(this IEnumerable<T> list) => new(list);
 
     public static void addAll<T>(this HashSet<T> hashSet, IEnumerable<T> other) => hashSet.UnionWith(other);
     public static int size<T>(this HashSet<T> hashSet) => hashSet.Count;
@@ -74,11 +76,18 @@ internal static class CSharpTypeJavaExtentions
     public static void add<T>(this BlockingCollection<T> q, T value) => q.Add(value);
     public static T take<T>(this BlockingCollection<T> q) => q.Take();
     public static bool isEmpty<T>(this BlockingCollection<T> q) => q.Count == 0;
+    public static int size<T>(this BlockingCollection<T> q) => q.Count;
 
     public static TKey getKey<TKey, TValue>(this KeyValuePair<TKey, TValue> pair) => pair.Key;
     public static TValue getValue<TKey, TValue>(this KeyValuePair<TKey, TValue> pair) => pair.Value;
 
     public static StringBuilder append(this StringBuilder sb, string value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
+    public static StringBuilder append(this StringBuilder sb, long value)
     {
         sb.Append(value);
         return sb;
@@ -90,15 +99,48 @@ internal static class CSharpTypeJavaExtentions
         return sb;
     }
 
+    public static StringBuilder append(this StringBuilder sb, short value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
+    public static StringBuilder append(this StringBuilder sb, sbyte value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
+    public static StringBuilder append(this StringBuilder sb, double value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
+    public static StringBuilder append(this StringBuilder sb, decimal value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
+    public static StringBuilder append(this StringBuilder sb, float value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
+    public static StringBuilder append(this StringBuilder sb, object value)
+    {
+        sb.Append(value);
+        return sb;
+    }
+
     public static string toString(this StringBuilder sb) => sb.ToString();
 
     public static void close(this Stream stream) => stream.Close();
     public static byte[] toByteArray(this MemoryStream stream) => stream.ToArray();
 
     public static TResult apply<T, TResult>(this Func<T, TResult> func, T arg) => func(arg);
-
-    public static bool hasNext<T>(this IEnumerator<T> enumerator) => enumerator.MoveNext();
-    public static T next<T>(this IEnumerator<T> enumerator) => enumerator.Current;
 
     public static int nextInt(this Random random, int maxValue) => Convert.ToInt32(random.NextDouble() * maxValue);
     public static long nextLong(this Random random, long maxValue) => Convert.ToInt64(random.NextDouble() * maxValue);
