@@ -309,7 +309,7 @@ public abstract class KeeperException : Exception
         return "KeeperErrorCode = " + getCodeMessage(_code) + " for " + path;
     }
 
-    void setMultiResults(List<OpResult> results) {
+    internal void setMultiResults(List<OpResult> results) {
         this.results = results;
     }
 

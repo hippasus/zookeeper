@@ -1,8 +1,15 @@
 namespace ApacheZooKeeper;
 
 using ApacheZooKeeper.Client;
+using ApacheZooKeeper.Common;
+using ApacheZooKeeper.Data;
+using ApacheZooKeeper.JavaPorts;
+using ApacheZooKeeper.Jute;
 using ApacheZooKeeper.Logging;
 using ApacheZooKeeper.Proto;
+using ApacheZooKeeper.Server;
+
+using WatcherType = Watcher.WatcherType;
 
 /**
  * This is the main class of ZooKeeper client library. To use a ZooKeeper
@@ -53,6 +60,7 @@ using ApacheZooKeeper.Proto;
  */
 public class ZooKeeper : IDisposable
 {
+    private readonly object _lock = new();
 
     /**
      * @deprecated Use {@link ZKClientConfig#ZOOKEEPER_CLIENT_CNXN_SOCKET}
@@ -213,7 +221,7 @@ public class ZooKeeper : IDisposable
          * @return true if the watch should be added, otw false
          */
         protected virtual bool shouldAddWatch(int rc) {
-            return rc == KeeperException.Code.OK.intValue();
+            return rc == ApacheZooKeeper.KeeperException.Code.OK.intValue();
         }
 
     }
@@ -231,12 +239,12 @@ public class ZooKeeper : IDisposable
         }
 
         protected override Dictionary<String, HashSet<Watcher>> getWatches(int rc) {
-            return rc == KeeperException.Code.OK.intValue()
+            return rc == ApacheZooKeeper.KeeperException.Code.OK.intValue()
                     ? _zk.getWatchManager().getDataWatches() : _zk.getWatchManager().getExistWatches();
         }
 
         protected override bool shouldAddWatch(int rc) {
-            return rc == KeeperException.Code.OK.intValue() || rc == KeeperException.Code.NONODE.intValue();
+            return rc == ApacheZooKeeper.KeeperException.Code.OK.intValue() || rc == ApacheZooKeeper.KeeperException.Code.NONODE.intValue();
         }
 
     }
@@ -287,33 +295,31 @@ public class ZooKeeper : IDisposable
 
     }
 
-    // TODO:
-    /*
-    class AddWatchRegistration : WatchRegistration {
+    public class AddWatchRegistration : WatchRegistration
+    {
+        private readonly ZooKeeper _zookeeper;
         private readonly AddWatchMode mode;
 
-        public AddWatchRegistration(Watcher watcher, String clientPath, AddWatchMode mode) {
-            base(chroot.interceptWatcher(watcher), prependChroot(clientPath));
+        public AddWatchRegistration(ZooKeeper zookeeper, Watcher watcher, String clientPath, AddWatchMode mode)
+            : base(zookeeper.chroot.interceptWatcher(watcher), zookeeper.prependChroot(clientPath)) {
+            _zookeeper = zookeeper;
             this.mode = mode;
         }
 
-        @Override
-        protected Map<String, Set<Watcher>> getWatches(int rc) {
+        protected override Dictionary<String, HashSet<Watcher>> getWatches(int rc) {
             switch (mode) {
-                case PERSISTENT:
-                    return getWatchManager().getPersistentWatches();
-                case PERSISTENT_RECURSIVE:
-                    return getWatchManager().getPersistentRecursiveWatches();
+                case AddWatchMode.PERSISTENT:
+                    return _zookeeper.getWatchManager().getPersistentWatches();
+                case AddWatchMode.PERSISTENT_RECURSIVE:
+                    return _zookeeper.getWatchManager().getPersistentRecursiveWatches();
             }
-            throw new IllegalArgumentException("Mode not supported: " + mode);
+            throw new ArgumentException("Mode not supported: " + mode);
         }
 
-        @Override
-        protected bool shouldAddWatch(int rc) {
-            return rc == KeeperException.Code.OK.intValue() || rc == KeeperException.Code.NONODE.intValue();
+        protected override bool shouldAddWatch(int rc) {
+            return rc == ApacheZooKeeper.KeeperException.Code.OK.intValue() || rc == ApacheZooKeeper.KeeperException.Code.NONODE.intValue();
         }
     }
-    */
 
     public enum States
     {
@@ -1248,6 +1254,1865 @@ public class ZooKeeper : IDisposable
      */
     internal String prependChroot(String clientPath) {
         return chroot.prepend(clientPath);
+    }
+
+
+    /**
+     * Create a node with the given path. The node data will be the given data,
+     * and node acl will be the given acl.
+     * <p>
+     * The flags argument specifies whether the created node will be ephemeral
+     * or not.
+     * <p>
+     * An ephemeral node will be removed by the ZooKeeper automatically when the
+     * session associated with the creation of the node expires.
+     * <p>
+     * The flags argument can also specify to create a sequential node. The
+     * actual path name of a sequential node will be the given path plus a
+     * suffix "i" where i is the current sequential number of the node. The sequence
+     * number is always fixed length of 10 digits, 0 padded. Once
+     * such a node is created, the sequential number will be incremented by one.
+     * <p>
+     * If a node with the same actual path already exists in the ZooKeeper, a
+     * KeeperException with error code KeeperException.NodeExists will be
+     * thrown. Note that since a different actual path is used for each
+     * invocation of creating sequential node with the same path argument, the
+     * call will never throw "file exists" KeeperException.
+     * <p>
+     * If the parent node does not exist in the ZooKeeper, a KeeperException
+     * with error code KeeperException.NoNode will be thrown.
+     * <p>
+     * An ephemeral node cannot have children. If the parent node of the given
+     * path is ephemeral, a KeeperException with error code
+     * KeeperException.NoChildrenForEphemerals will be thrown.
+     * <p>
+     * This operation, if successful, will trigger all the watches left on the
+     * node of the given path by exists and getData API calls, and the watches
+     * left on the parent node by getChildren API calls.
+     * <p>
+     * If a node is created successfully, the ZooKeeper server will trigger the
+     * watches on the path left by exists calls, and the watches on the parent
+     * of the node by getChildren calls.
+     * <p>
+     * The maximum allowable size of the data array is 1 MB (1,048,576 bytes).
+     * Arrays larger than this will cause a KeeperException to be thrown.
+     *
+     * @param path
+     *                the path for the node
+     * @param data
+     *                the initial data for the node
+     * @param acl
+     *                the acl for the node
+     * @param createMode
+     *                specifying whether the node to be created is ephemeral
+     *                and/or sequential
+     * @return the actual path of the created node
+     * @throws KeeperException if the server returns a non-zero error code
+     * @throws KeeperException.InvalidACLException if the ACL is invalid, null, or empty
+     * @throws InterruptedException if the transaction is interrupted
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public String create(
+        String path,
+        byte[] data,
+        List<ACL> acl,
+        CreateMode createMode) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath, createMode.isSequential());
+        EphemeralTypeExtensions.validateTTL(createMode, -1);
+        validateACL(acl);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(createMode.isContainer() ? ZooDefs.OpCode.createContainer : ZooDefs.OpCode.create);
+        CreateRequest request = new CreateRequest();
+        CreateResponse response = new CreateResponse();
+        request.setData(data);
+        request.setFlags(createMode.toFlag());
+        request.setPath(serverPath);
+        request.setAcl(acl);
+        ReplyHeader r = cnxn.submitRequest(h, request, response, null);
+        if (r.getErr() != 0) {
+            throw ApacheZooKeeper.KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        return chroot.strip(response.getPath());
+    }
+
+    /**
+     * Create a node with the given path and returns the Stat of that node. The
+     * node data will be the given data and node acl will be the given acl.
+     * <p>
+     * The flags argument specifies whether the created node will be ephemeral
+     * or not.
+     * <p>
+     * An ephemeral node will be removed by the ZooKeeper automatically when the
+     * session associated with the creation of the node expires.
+     * <p>
+     * The flags argument can also specify to create a sequential node. The
+     * actual path name of a sequential node will be the given path plus a
+     * suffix "i" where i is the current sequential number of the node. The sequence
+     * number is always fixed length of 10 digits, 0 padded. Once
+     * such a node is created, the sequential number will be incremented by one.
+     * <p>
+     * If a node with the same actual path already exists in the ZooKeeper, a
+     * KeeperException with error code KeeperException.NodeExists will be
+     * thrown. Note that since a different actual path is used for each
+     * invocation of creating sequential node with the same path argument, the
+     * call will never throw "file exists" KeeperException.
+     * <p>
+     * If the parent node does not exist in the ZooKeeper, a KeeperException
+     * with error code KeeperException.NoNode will be thrown.
+     * <p>
+     * An ephemeral node cannot have children. If the parent node of the given
+     * path is ephemeral, a KeeperException with error code
+     * KeeperException.NoChildrenForEphemerals will be thrown.
+     * <p>
+     * This operation, if successful, will trigger all the watches left on the
+     * node of the given path by exists and getData API calls, and the watches
+     * left on the parent node by getChildren API calls.
+     * <p>
+     * If a node is created successfully, the ZooKeeper server will trigger the
+     * watches on the path left by exists calls, and the watches on the parent
+     * of the node by getChildren calls.
+     * <p>
+     * The maximum allowable size of the data array is 1 MB (1,048,576 bytes).
+     * Arrays larger than this will cause a KeeperException to be thrown.
+     *
+     * @param path
+     *                the path for the node
+     * @param data
+     *                the initial data for the node
+     * @param acl
+     *                the acl for the node
+     * @param createMode
+     *                specifying whether the node to be created is ephemeral
+     *                and/or sequential
+     * @param stat
+     *                The output Stat object.
+     * @return the actual path of the created node
+     * @throws KeeperException if the server returns a non-zero error code
+     * @throws KeeperException.InvalidACLException if the ACL is invalid, null, or empty
+     * @throws InterruptedException if the transaction is interrupted
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public String create(
+        String path,
+        byte[] data,
+        List<ACL> acl,
+        CreateMode createMode,
+        Stat stat) {
+        return create(path, data, acl, createMode, stat, -1);
+    }
+
+    /**
+     * same as {@link #create(String, byte[], List, CreateMode, Stat)} but
+     * allows for specifying a TTL when mode is {@link CreateMode#PERSISTENT_WITH_TTL}
+     * or {@link CreateMode#PERSISTENT_SEQUENTIAL_WITH_TTL}. If the znode has not been modified
+     * within the given TTL, it will be deleted once it has no children. The TTL unit is
+     * milliseconds and must be greater than 0 and less than or equal to
+     * {@link EphemeralType#maxValue()} for {@link EphemeralType#TTL}.
+     */
+    public String create(
+        String path,
+        byte[] data,
+        List<ACL> acl,
+        CreateMode createMode,
+        Stat stat,
+        long ttl) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath, createMode.isSequential());
+        EphemeralTypeExtensions.validateTTL(createMode, ttl);
+        validateACL(acl);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        setCreateHeader(createMode, h);
+        Create2Response response = new Create2Response();
+        IRecord record = makeCreateRecord(createMode, serverPath, data, acl, ttl);
+        ReplyHeader r = cnxn.submitRequest(h, record, response, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        if (stat != null) {
+            DataTree.copyStat(response.getStat(), stat);
+        }
+        return chroot.strip(response.getPath());
+    }
+
+    private void setCreateHeader(CreateMode createMode, RequestHeader h) {
+        if (createMode.isTTL()) {
+            h.setType(ZooDefs.OpCode.createTTL);
+        } else {
+            h.setType(createMode.isContainer() ? ZooDefs.OpCode.createContainer : ZooDefs.OpCode.create2);
+        }
+    }
+
+    private Record makeCreateRecord(CreateMode createMode, String serverPath, byte[] data, List<ACL> acl, long ttl) {
+        Record record;
+        if (createMode.isTTL()) {
+            CreateTTLRequest request = new CreateTTLRequest();
+            request.setData(data);
+            request.setFlags(createMode.toFlag());
+            request.setPath(serverPath);
+            request.setAcl(acl);
+            request.setTtl(ttl);
+            record = request;
+        } else {
+            CreateRequest request = new CreateRequest();
+            request.setData(data);
+            request.setFlags(createMode.toFlag());
+            request.setPath(serverPath);
+            request.setAcl(acl);
+            record = request;
+        }
+        return record;
+    }
+
+    /**
+     * The asynchronous version of create.
+     *
+     * @see #create(String, byte[], List, CreateMode)
+     */
+    public void create(
+        String path,
+        byte[] data,
+        List<ACL> acl,
+        CreateMode createMode,
+        StringCallback cb,
+        Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath, createMode.isSequential());
+        EphemeralTypeExtensions.validateTTL(createMode, -1);
+
+        String serverPath = prependChroot(clientPath);
+        cb = chroot.interceptCallback(cb);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(createMode.isContainer() ? ZooDefs.OpCode.createContainer : ZooDefs.OpCode.create);
+        CreateRequest request = new CreateRequest();
+        CreateResponse response = new CreateResponse();
+        ReplyHeader r = new ReplyHeader();
+        request.setData(data);
+        request.setFlags(createMode.toFlag());
+        request.setPath(serverPath);
+        request.setAcl(acl);
+        cnxn.queuePacket(h, r, request, response, cb, clientPath, serverPath, ctx, null);
+    }
+
+    /**
+     * The asynchronous version of create.
+     *
+     * @see #create(String, byte[], List, CreateMode, Stat)
+     */
+    public void create(
+        String path,
+        byte[] data,
+        List<ACL> acl,
+        CreateMode createMode,
+        Create2Callback cb,
+        Object ctx) {
+        create(path, data, acl, createMode, cb, ctx, -1);
+    }
+
+    /**
+     * The asynchronous version of create with ttl.
+     *
+     * @see #create(String, byte[], List, CreateMode, Stat, long)
+     */
+    public void create(
+        String path,
+        byte[] data,
+        List<ACL> acl,
+        CreateMode createMode,
+        Create2Callback cb,
+        Object ctx,
+        long ttl) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath, createMode.isSequential());
+        EphemeralTypeExtensions.validateTTL(createMode, ttl);
+
+        String serverPath = prependChroot(clientPath);
+        cb = chroot.interceptCallback(cb);
+
+        RequestHeader h = new RequestHeader();
+        setCreateHeader(createMode, h);
+        ReplyHeader r = new ReplyHeader();
+        Create2Response response = new Create2Response();
+        Record record = makeCreateRecord(createMode, serverPath, data, acl, ttl);
+        cnxn.queuePacket(h, r, record, response, cb, clientPath, serverPath, ctx, null);
+    }
+
+    /**
+     * Delete the node with the given path. The call will succeed if such a node
+     * exists, and the given version matches the node's version (if the given
+     * version is -1, it matches any node's versions).
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if the nodes does not exist.
+     * <p>
+     * A KeeperException with error code KeeperException.BadVersion will be
+     * thrown if the given version does not match the node's version.
+     * <p>
+     * A KeeperException with error code KeeperException.NotEmpty will be thrown
+     * if the node has children.
+     * <p>
+     * This operation, if successful, will trigger all the watches on the node
+     * of the given path left by exists API calls, and the watches on the parent
+     * node left by getChildren API calls.
+     *
+     * @param path
+     *                the path of the node to be deleted.
+     * @param version
+     *                the expected node version.
+     * @throws InterruptedException IF the server transaction is interrupted
+     * @throws KeeperException If the server signals an error with a non-zero
+     *   return code.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public void delete(String path, int version) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath;
+
+        // maintain semantics even in chroot case
+        // specifically - root cannot be deleted
+        // I think this makes sense even in chroot case.
+        if (clientPath.equals("/")) {
+            // a bit of a hack, but delete(/) will never succeed and ensures
+            // that the same semantics are maintained
+            serverPath = clientPath;
+        } else {
+            serverPath = prependChroot(clientPath);
+        }
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.delete);
+        DeleteRequest request = new DeleteRequest();
+        request.setPath(serverPath);
+        request.setVersion(version);
+        ReplyHeader r = cnxn.submitRequest(h, request, null, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+    }
+
+    /**
+     * Executes multiple ZooKeeper operations. In case of transactions all of them or none of them will be executed.
+     * <p>
+     * On success, a list of results is returned.
+     * On failure, an exception is raised which contains partial results and
+     * error details, see {@link KeeperException#getResults}
+     * <p>
+     * Note: The maximum allowable size of all of the data arrays in all of
+     * the setData operations in this single request is typically 1 MB
+     * (1,048,576 bytes). This limit is specified on the server via
+     * <a href="http://zookeeper.apache.org/doc/current/zookeeperAdmin.html#Unsafe+Options">jute.maxbuffer</a>.
+     * Requests larger than this will cause a KeeperException to be
+     * thrown.
+     *
+     * @param ops An iterable that contains the operations to be done.
+     * These should be created using the factory methods on {@link Op} and must be the same kind of ops.
+     * @return A list of results, one for each input Op, the order of
+     * which exactly matches the order of the <code>ops</code> input
+     * operations.
+     * @throws InterruptedException If the operation was interrupted.
+     * The operation may or may not have succeeded, but will not have
+     * partially succeeded if this exception is thrown.
+     * @throws KeeperException If the operation could not be completed
+     * due to some error in doing one of the specified ops.
+     * @throws IllegalArgumentException if an invalid path is specified or different kind of ops are mixed
+     *
+     * @since 3.4.0
+     */
+    public List<OpResult> multi(IEnumerable<Op> ops) {
+        foreach (Op op in ops) {
+            op.validate();
+        }
+        return multiInternal(generateMultiTransaction(ops));
+    }
+
+    /**
+     * The asynchronous version of multi.
+     *
+     * @see #multi(Iterable)
+     */
+    public void multi(IEnumerable<Op> ops, MultiCallback cb, Object ctx) {
+        List<OpResult> results = validatePath(ops);
+        if (results.size() > 0) {
+            cb.processResult(KeeperException.Code.BADARGUMENTS.intValue(), null, ctx, results);
+            return;
+        }
+        multiInternal(generateMultiTransaction(ops), cb, ctx);
+    }
+
+    private List<OpResult> validatePath(IEnumerable<Op> ops) {
+        List<OpResult> results = new();
+        bool error = false;
+        foreach (Op op in ops) {
+            try {
+                op.validate();
+            } catch (ArgumentException iae) {
+                LOG.error("Unexpected exception", iae);
+                OpResult.ErrorResult iaeErrr= new OpResult.ErrorResult(KeeperException.Code.BADARGUMENTS.intValue());
+                results.add(iaeErrr);
+                error = true;
+                continue;
+            } catch (KeeperException ke) {
+                LOG.error("Unexpected exception", ke);
+                OpResult.ErrorResult keErr = new OpResult.ErrorResult(ke.code().intValue());
+                results.add(keErr);
+                error = true;
+                continue;
+            }
+            OpResult.ErrorResult err = new OpResult.ErrorResult(KeeperException.Code.RUNTIMEINCONSISTENCY.intValue());
+            results.add(err);
+        }
+        if (!error) {
+            results.clear();
+        }
+        return results;
+    }
+
+    private MultiOperationRecord generateMultiTransaction(IEnumerable<Op> ops) {
+        // reconstructing transaction with the chroot prefix
+        List<Op> transaction = new();
+        foreach (Op op in ops) {
+            transaction.add(withRootPrefix(op));
+        }
+        return new MultiOperationRecord(transaction);
+    }
+
+    private Op withRootPrefix(Op op) {
+        if (null != op.getPath()) {
+            String serverPath = prependChroot(op.getPath());
+            if (!op.getPath().equals(serverPath)) {
+                return op.withChroot(serverPath);
+            }
+        }
+        return op;
+    }
+
+    protected void multiInternal(
+        MultiOperationRecord request,
+        MultiCallback cb,
+        Object ctx) {
+        if (request.size() == 0) {
+            // nothing to do, early exit
+            cnxn.queueCallback(cb, KeeperException.Code.OK.intValue(), null, ctx);
+            return;
+        }
+        RequestHeader h = new RequestHeader();
+        switch (request.getOpKind()) {
+        case Op.OpKind.TRANSACTION:
+            h.setType(ZooDefs.OpCode.multi);
+            break;
+        case Op.OpKind.READ:
+            h.setType(ZooDefs.OpCode.multiRead);
+            break;
+        default:
+            throw new ArgumentException("Unsupported OpKind: " + request.getOpKind());
+        }
+        MultiResponse response = new MultiResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, null, null, ctx, null);
+    }
+
+    protected List<OpResult> multiInternal(
+        MultiOperationRecord request) {
+        RequestHeader h = new RequestHeader();
+        if (request.size() == 0) {
+            // nothing to do, early exit
+            return Collections.emptyList<OpResult>();
+        }
+        switch (request.getOpKind()) {
+        case Op.OpKind.TRANSACTION:
+            h.setType(ZooDefs.OpCode.multi);
+            break;
+        case Op.OpKind.READ:
+            h.setType(ZooDefs.OpCode.multiRead);
+            break;
+        default:
+            throw new ArgumentException("Unsupported OpKind: " + request.getOpKind());
+        }
+        MultiResponse response = new MultiResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()));
+        }
+
+        List<OpResult> results = response.getResultList();
+        // In case of only read operations there is no need to throw an exception
+        // as the subResults are still possibly valid.
+        if (request.getOpKind() == Op.OpKind.READ) {
+            return results;
+        }
+
+        OpResult.ErrorResult fatalError = null;
+        foreach (OpResult result in results) {
+            if (result is OpResult.ErrorResult
+                && ((OpResult.ErrorResult) result).getErr() != KeeperException.Code.OK.intValue()) {
+                fatalError = (OpResult.ErrorResult) result;
+                break;
+            }
+        }
+
+        if (fatalError != null) {
+            KeeperException ex = KeeperException.create(KeeperExceptionCodeExtensions.get(fatalError.getErr()));
+            ex.setMultiResults(results);
+            throw ex;
+        }
+
+        return results;
+    }
+
+    /**
+     * A Transaction is a thin wrapper on the {@link #multi} method
+     * which provides a builder object that can be used to construct
+     * and commit an atomic set of operations.
+     *
+     * @since 3.4.0
+     *
+     * @return a Transaction builder object
+     */
+    //TODO:
+    /*
+    public Transaction transaction() {
+        return new Transaction(this);
+    }
+    */
+
+    /**
+     * The asynchronous version of delete.
+     *
+     * @see #delete(String, int)
+     */
+    public void delete(String path, int version, VoidCallback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath;
+
+        // maintain semantics even in chroot case
+        // specifically - root cannot be deleted
+        // I think this makes sense even in chroot case.
+        if (clientPath.equals("/")) {
+            // a bit of a hack, but delete(/) will never succeed and ensures
+            // that the same semantics are maintained
+            serverPath = clientPath;
+        } else {
+            serverPath = prependChroot(clientPath);
+        }
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.delete);
+        DeleteRequest request = new DeleteRequest();
+        request.setPath(serverPath);
+        request.setVersion(version);
+        cnxn.queuePacket(h, new ReplyHeader(), request, null, cb, clientPath, serverPath, ctx, null);
+    }
+
+    /**
+     * Return the stat of the node of the given path. Return null if no such a
+     * node exists.
+     * <p>
+     * If the watch is non-null and the call is successful (no exception is thrown),
+     * a watch will be left on the node with the given path. The watch will be
+     * triggered by a successful operation that creates/delete the node or sets
+     * the data on the node.
+     *
+     * @param path the node path
+     * @param watcher explicit watcher
+     * @return the stat of the node of the given path; return null if no such a
+     *         node exists.
+     * @throws KeeperException If the server signals an error
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public Stat exists(String path, Watcher watcher) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new ExistsWatchRegistration(this, watcher, clientPath);
+        }
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.exists);
+        ExistsRequest request = new ExistsRequest();
+        request.setPath(serverPath);
+        request.setWatch(watcher != null);
+        SetDataResponse response = new SetDataResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, wcb);
+        if (r.getErr() != 0) {
+            if (r.getErr() == KeeperException.Code.NONODE.intValue()) {
+                return null;
+            }
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+
+        return response.getStat().getCzxid() == -1 ? null : response.getStat();
+    }
+
+    /**
+     * Return the stat of the node of the given path. Return null if no such a
+     * node exists.
+     *
+     * <p>If the watch is true and the call is successful (no exception is thrown),
+     * a watch will be left on the node with the given path. The watch will be
+     * triggered by a successful operation that creates/delete the node or sets
+     * the data on the node.
+     *
+     * @param path the node path
+     * @param watch whether need to watch this node
+     * @return the stat of the node of the given path; return null if no such a
+     *         node exists.
+     * @throws KeeperException If the server signals an error
+     * @throws IllegalStateException if watch this node with a null default watcher
+     * @throws InterruptedException If the server transaction is interrupted.
+     */
+    public Stat exists(String path, bool watch) {
+        return exists(path, getDefaultWatcher(watch));
+    }
+
+    /**
+     * The asynchronous version of exists.
+     *
+     * @see #exists(String, Watcher)
+     */
+    public void exists(String path, Watcher watcher, StatCallback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new ExistsWatchRegistration(this, watcher, clientPath);
+        }
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.exists);
+        ExistsRequest request = new ExistsRequest();
+        request.setPath(serverPath);
+        request.setWatch(watcher != null);
+        SetDataResponse response = new SetDataResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, wcb);
+    }
+
+    /**
+     * The asynchronous version of exists.
+     *
+     * @throws IllegalStateException if watch this node with a null default watcher
+     *
+     * @see #exists(String, bool)
+     */
+    public void exists(String path, bool watch, StatCallback cb, Object ctx) {
+        exists(path, getDefaultWatcher(watch), cb, ctx);
+    }
+
+    /**
+     * Return the data and the stat of the node of the given path.
+     * <p>
+     * If the watch is non-null and the call is successful (no exception is
+     * thrown), a watch will be left on the node with the given path. The watch
+     * will be triggered by a successful operation that sets data on the node, or
+     * deletes the node.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     *
+     * @param path the given path
+     * @param watcher explicit watcher
+     * @param stat the stat of the node
+     * @return the data of the node
+     * @throws KeeperException If the server signals an error with a non-zero error code
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public byte[] getData(String path, Watcher watcher, Stat stat) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new DataWatchRegistration(this, watcher, clientPath);
+        }
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getData);
+        GetDataRequest request = new GetDataRequest();
+        request.setPath(serverPath);
+        request.setWatch(watcher != null);
+        GetDataResponse response = new GetDataResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, wcb);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        if (stat != null) {
+            DataTree.copyStat(response.getStat(), stat);
+        }
+        return response.getData();
+    }
+
+    /**
+     * Return the data and the stat of the node of the given path.
+     * <p>
+     * If the watch is true and the call is successful (no exception is
+     * thrown), a watch will be left on the node with the given path. The watch
+     * will be triggered by a successful operation that sets data on the node, or
+     * deletes the node.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     *
+     * @param path the given path
+     * @param watch whether need to watch this node
+     * @param stat the stat of the node
+     * @return the data of the node
+     * @throws KeeperException If the server signals an error with a non-zero error code
+     * @throws IllegalStateException if watch this node with a null default watcher
+     * @throws InterruptedException If the server transaction is interrupted.
+     */
+    public byte[] getData(String path, bool watch, Stat stat) {
+        return getData(path, getDefaultWatcher(watch), stat);
+    }
+
+    /**
+     * The asynchronous version of getData.
+     *
+     * @see #getData(String, Watcher, Stat)
+     */
+    public void getData(String path, Watcher watcher, DataCallback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new DataWatchRegistration(this, watcher, clientPath);
+        }
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getData);
+        GetDataRequest request = new GetDataRequest();
+        request.setPath(serverPath);
+        request.setWatch(watcher != null);
+        GetDataResponse response = new GetDataResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, wcb);
+    }
+
+    /**
+     * The asynchronous version of getData.
+     *
+     * @throws IllegalStateException if watch this node with a null default watcher
+     *
+     * @see #getData(String, bool, Stat)
+     */
+    public void getData(String path, bool watch, DataCallback cb, Object ctx) {
+        getData(path, getDefaultWatcher(watch), cb, ctx);
+    }
+
+
+    /**
+     * Return the last committed configuration (as known to the server to which the client is connected)
+     * and the stat of the configuration.
+     * <p>
+     * If the watch is non-null and the call is successful (no exception is
+     * thrown), a watch will be left on the configuration node (ZooDefs.CONFIG_NODE). The watch
+     * will be triggered by a successful reconfig operation
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if the configuration node doesn't exists.
+     *
+     * @param watcher explicit watcher
+     * @param stat the stat of the configuration node ZooDefs.CONFIG_NODE
+     * @return configuration data stored in ZooDefs.CONFIG_NODE
+     * @throws KeeperException If the server signals an error with a non-zero error code
+     * @throws InterruptedException If the server transaction is interrupted.
+     */
+    public byte[] getConfig(Watcher watcher, Stat stat) {
+        String configZnode = ZooDefs.CONFIG_NODE;
+
+        // the watch contains the un-chroot path
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new ServerDataWatchRegistration(this, watcher, configZnode);
+        }
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getData);
+        GetDataRequest request = new GetDataRequest();
+        request.setPath(configZnode);
+        request.setWatch(watcher != null);
+        GetDataResponse response = new GetDataResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, wcb);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), configZnode);
+        }
+        if (stat != null) {
+            DataTree.copyStat(response.getStat(), stat);
+        }
+        return response.getData();
+    }
+
+    /**
+     * The asynchronous version of getConfig.
+     *
+     * @see #getConfig(Watcher, Stat)
+     */
+    public void getConfig(Watcher watcher, DataCallback cb, Object ctx) {
+        String configZnode = ZooDefs.CONFIG_NODE;
+
+        // the watch contains the un-chroot path
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new ServerDataWatchRegistration(this, watcher, configZnode);
+        }
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getData);
+        GetDataRequest request = new GetDataRequest();
+        request.setPath(configZnode);
+        request.setWatch(watcher != null);
+        GetDataResponse response = new GetDataResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, configZnode, configZnode, ctx, wcb);
+    }
+
+    /**
+     * Return the last committed configuration (as known to the server to which the client is connected)
+     * and the stat of the configuration.
+     * <p>
+     * If the watch is true and the call is successful (no exception is
+     * thrown), a watch will be left on the configuration node (ZooDefs.CONFIG_NODE). The watch
+     * will be triggered by a successful reconfig operation
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     *
+     * @param watch whether need to watch this node
+     * @param stat the stat of the configuration node ZooDefs.CONFIG_NODE
+     * @return configuration data stored in ZooDefs.CONFIG_NODE
+     * @throws KeeperException If the server signals an error with a non-zero error code
+     * @throws IllegalStateException if watch this node with a null default watcher
+     * @throws InterruptedException If the server transaction is interrupted.
+     */
+    public byte[] getConfig(bool watch, Stat stat) {
+        return getConfig(getDefaultWatcher(watch), stat);
+    }
+
+    /**
+     * The Asynchronous version of getConfig.
+     *
+     * @throws IllegalStateException if watch this node with a null default watcher
+     *
+     * @see #getData(String, bool, Stat)
+     */
+    public void getConfig(bool watch, DataCallback cb, Object ctx) {
+        getConfig(getDefaultWatcher(watch), cb, ctx);
+    }
+
+
+    /**
+     * Set the data for the node of the given path if such a node exists and the
+     * given version matches the version of the node (if the given version is
+     * -1, it matches any node's versions). Return the stat of the node.
+     * <p>
+     * This operation, if successful, will trigger all the watches on the node
+     * of the given path left by getData calls.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     * <p>
+     * A KeeperException with error code KeeperException.BadVersion will be
+     * thrown if the given version does not match the node's version.
+     * <p>
+     * The maximum allowable size of the data array is 1 MB (1,048,576 bytes).
+     * Arrays larger than this will cause a KeeperException to be thrown.
+     *
+     * @param path
+     *                the path of the node
+     * @param data
+     *                the data to set
+     * @param version
+     *                the expected matching version
+     * @return the state of the node
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero error code.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public Stat setData(String path, byte[] data, int version) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.setData);
+        SetDataRequest request = new SetDataRequest();
+        request.setPath(serverPath);
+        request.setData(data);
+        request.setVersion(version);
+        SetDataResponse response = new SetDataResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        return response.getStat();
+    }
+
+    /**
+     * The asynchronous version of setData.
+     *
+     * @see #setData(String, byte[], int)
+     */
+    public void setData(String path, byte[] data, int version, StatCallback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.setData);
+        SetDataRequest request = new SetDataRequest();
+        request.setPath(serverPath);
+        request.setData(data);
+        request.setVersion(version);
+        SetDataResponse response = new SetDataResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, null);
+    }
+
+    /**
+     * Return the ACL and stat of the node of the given path.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     *
+     * @param path
+     *                the given path for the node
+     * @param stat
+     *                the stat of the node will be copied to this parameter if
+     *                not null.
+     * @return the ACL array of the given node.
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero error code.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public List<ACL> getACL(String path, Stat stat) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getACL);
+        GetACLRequest request = new GetACLRequest();
+        request.setPath(serverPath);
+        GetACLResponse response = new GetACLResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        if (stat != null) {
+            DataTree.copyStat(response.getStat(), stat);
+        }
+        return response.getAcl();
+    }
+
+    /**
+     * The asynchronous version of getACL.
+     *
+     * @see #getACL(String, Stat)
+     */
+    public void getACL(String path, Stat stat, ACLCallback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getACL);
+        GetACLRequest request = new GetACLRequest();
+        request.setPath(serverPath);
+        GetACLResponse response = new GetACLResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, null);
+    }
+
+    /**
+     * Set the ACL for the node of the given path if such a node exists and the
+     * given aclVersion matches the acl version of the node. Return the stat of the
+     * node.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     * <p>
+     * A KeeperException with error code KeeperException.BadVersion will be
+     * thrown if the given aclVersion does not match the node's aclVersion.
+     *
+     * @param path the given path for the node
+     * @param acl the given acl for the node
+     * @param aclVersion the given acl version of the node
+     * @return the stat of the node.
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero error code.
+     * @throws org.apache.zookeeper.KeeperException.InvalidACLException If the acl is invalid.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public Stat setACL(String path, List<ACL> acl, int aclVersion) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+        validateACL(acl);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.setACL);
+        SetACLRequest request = new SetACLRequest();
+        request.setPath(serverPath);
+        request.setAcl(acl);
+        request.setVersion(aclVersion);
+        SetACLResponse response = new SetACLResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        return response.getStat();
+    }
+
+    /**
+     * The asynchronous version of setACL.
+     *
+     * @see #setACL(String, List, int)
+     */
+    public void setACL(String path, List<ACL> acl, int version, StatCallback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.setACL);
+        SetACLRequest request = new SetACLRequest();
+        request.setPath(serverPath);
+        request.setAcl(acl);
+        request.setVersion(version);
+        SetACLResponse response = new SetACLResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, null);
+    }
+
+    /**
+     * Return the list of the children of the node of the given path.
+     * <p>
+     * If the watch is non-null and the call is successful (no exception is thrown),
+     * a watch will be left on the node with the given path. The watch will be
+     * triggered by a successful operation that deletes the node of the given
+     * path or creates/delete a child under the node.
+     * <p>
+     * The list of children returned is not sorted and no guarantee is provided
+     * as to its natural or lexical order.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     *
+     * @param path
+     * @param watcher explicit watcher
+     * @return an unordered array of children of the node with the given path
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero error code.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public List<String> getChildren(String path, Watcher watcher) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        // the watch contains the un-chroot path
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new ChildWatchRegistration(this, watcher, clientPath);
+        }
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getChildren);
+        GetChildrenRequest request = new GetChildrenRequest();
+        request.setPath(serverPath);
+        request.setWatch(watcher != null);
+        GetChildrenResponse response = new GetChildrenResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, wcb);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        return response.getChildren();
+    }
+
+    /**
+     * Return the list of the children of the node of the given path.
+     * <p>
+     * If the watch is true and the call is successful (no exception is thrown),
+     * a watch will be left on the node with the given path. The watch will be
+     * triggered by a successful operation that deletes the node of the given
+     * path or creates/delete a child under the node.
+     * <p>
+     * The list of children returned is not sorted and no guarantee is provided
+     * as to its natural or lexical order.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     *
+     * @param path the node path
+     * @param watch whether need to watch this node
+     * @return an unordered array of children of the node with the given path
+     * @throws IllegalStateException if watch this node with a null default watcher
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero error code.
+     */
+    public List<String> getChildren(String path, bool watch) {
+        return getChildren(path, getDefaultWatcher(watch));
+    }
+
+    /**
+     * The asynchronous version of getChildren.
+     *
+     * @see #getChildren(String, Watcher)
+     */
+    public void getChildren(String path, Watcher watcher, ChildrenCallback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        // the watch contains the un-chroot path
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new ChildWatchRegistration(this, watcher, clientPath);
+        }
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getChildren);
+        GetChildrenRequest request = new GetChildrenRequest();
+        request.setPath(serverPath);
+        request.setWatch(watcher != null);
+        GetChildrenResponse response = new GetChildrenResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, wcb);
+    }
+
+    /**
+     * The asynchronous version of getChildren.
+     *
+     * @throws IllegalStateException if watch this node with a null default watcher
+     *
+     * @see #getChildren(String, bool)
+     */
+    public void getChildren(String path, bool watch, ChildrenCallback cb, Object ctx) {
+        getChildren(path, getDefaultWatcher(watch), cb, ctx);
+    }
+
+    /**
+     * For the given znode path return the stat and children list.
+     * <p>
+     * If the watch is non-null and the call is successful (no exception is thrown),
+     * a watch will be left on the node with the given path. The watch will be
+     * triggered by a successful operation that deletes the node of the given
+     * path or creates/delete a child under the node.
+     * <p>
+     * The list of children returned is not sorted and no guarantee is provided
+     * as to its natural or lexical order.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     *
+     * @since 3.3.0
+     *
+     * @param path
+     * @param watcher explicit watcher
+     * @param stat stat of the znode designated by path
+     * @return an unordered array of children of the node with the given path
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero error code.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public List<String> getChildren(
+        String path,
+        Watcher watcher,
+        Stat stat) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        // the watch contains the un-chroot path
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new ChildWatchRegistration(this, watcher, clientPath);
+        }
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getChildren2);
+        GetChildren2Request request = new GetChildren2Request();
+        request.setPath(serverPath);
+        request.setWatch(watcher != null);
+        GetChildren2Response response = new GetChildren2Response();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, wcb);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        if (stat != null) {
+            DataTree.copyStat(response.getStat(), stat);
+        }
+        return response.getChildren();
+    }
+
+    /**
+     * For the given znode path return the stat and children list.
+     * <p>
+     * If the watch is true and the call is successful (no exception is thrown),
+     * a watch will be left on the node with the given path. The watch will be
+     * triggered by a successful operation that deletes the node of the given
+     * path or creates/delete a child under the node.
+     * <p>
+     * The list of children returned is not sorted and no guarantee is provided
+     * as to its natural or lexical order.
+     * <p>
+     * A KeeperException with error code KeeperException.NoNode will be thrown
+     * if no node with the given path exists.
+     *
+     * @since 3.3.0
+     *
+     * @param path the node path
+     * @param watch whether need to watch this node
+     * @param stat stat of the znode designated by path
+     * @return an unordered array of children of the node with the given path
+     * @throws IllegalStateException if watch this node with a null default watcher
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero
+     *  error code.
+     */
+    public List<String> getChildren(
+        String path,
+        bool watch,
+        Stat stat) {
+        return getChildren(path, getDefaultWatcher(watch), stat);
+    }
+
+    /**
+     * The asynchronous version of getChildren.
+     *
+     * @since 3.3.0
+     *
+     * @see #getChildren(String, Watcher, Stat)
+     */
+    public void getChildren(String path, Watcher watcher, Children2Callback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        // the watch contains the un-chroot path
+        WatchRegistration wcb = null;
+        if (watcher != null) {
+            wcb = new ChildWatchRegistration(this, watcher, clientPath);
+        }
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getChildren2);
+        GetChildren2Request request = new GetChildren2Request();
+        request.setPath(serverPath);
+        request.setWatch(watcher != null);
+        GetChildren2Response response = new GetChildren2Response();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, wcb);
+    }
+
+    /**
+     * The asynchronous version of getChildren.
+     *
+     * @since 3.3.0
+     *
+     * @throws IllegalStateException if watch this node with a null default watcher
+     *
+     * @see #getChildren(String, bool, Stat)
+     */
+    public void getChildren(String path, bool watch, Children2Callback cb, Object ctx) {
+        getChildren(path, getDefaultWatcher(watch), cb, ctx);
+    }
+
+    /**
+     * Synchronously gets all numbers of children nodes under a specific path
+     *
+     * @since 3.6.0
+     * @param path
+     * @return Children nodes count under path
+     * @throws KeeperException
+     * @throws InterruptedException
+     */
+    public int getAllChildrenNumber(String path) {
+
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getAllChildrenNumber);
+        GetAllChildrenNumberRequest request = new GetAllChildrenNumberRequest(serverPath);
+        GetAllChildrenNumberResponse response = new GetAllChildrenNumberResponse();
+
+        ReplyHeader r = cnxn.submitRequest(h, request, response, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+        return response.getTotalNumber();
+    }
+
+    /**
+     * Asynchronously gets all numbers of children nodes under a specific path
+     *
+     * @since 3.6.0
+     * @param path
+     */
+    public void getAllChildrenNumber(String path, AllChildrenNumberCallback cb, Object ctx) {
+
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getAllChildrenNumber);
+        GetAllChildrenNumberRequest request = new GetAllChildrenNumberRequest(serverPath);
+        GetAllChildrenNumberResponse response = new GetAllChildrenNumberResponse();
+
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, null);
+    }
+
+    /**
+     * Synchronously gets all the ephemeral nodes  created by this session.
+     *
+     * @since 3.6.0
+     *
+     */
+    public List<String> getEphemerals() {
+        return getEphemerals("/");
+    }
+
+    /**
+     * Synchronously gets all the ephemeral nodes matching prefixPath
+     * created by this session.  If prefixPath is "/" then it returns all
+     * ephemerals
+     *
+     * @since 3.6.0
+     *
+     */
+    public List<String> getEphemerals(String prefixPath) {
+        PathUtils.validatePath(prefixPath);
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getEphemerals);
+        GetEphemeralsRequest request = new GetEphemeralsRequest(prefixPath);
+        GetEphemeralsResponse response = new GetEphemeralsResponse();
+        ReplyHeader r = cnxn.submitRequest(h, request, response, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()));
+        }
+        return response.getEphemerals();
+    }
+
+    /**
+     * Asynchronously gets all the ephemeral nodes matching prefixPath
+     * created by this session.  If prefixPath is "/" then it returns all
+     * ephemerals
+     *
+     * @since 3.6.0
+     *
+     */
+    public void getEphemerals(String prefixPath, EphemeralsCallback cb, Object ctx) {
+        PathUtils.validatePath(prefixPath);
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.getEphemerals);
+        GetEphemeralsRequest request = new GetEphemeralsRequest(prefixPath);
+        GetEphemeralsResponse response = new GetEphemeralsResponse();
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, null, null, ctx, null);
+    }
+
+    /**
+     * Asynchronously gets all the ephemeral nodes created by this session.
+     * ephemerals
+     *
+     * @since 3.6.0
+     *
+     */
+    public void getEphemerals(EphemeralsCallback cb, Object ctx) {
+        getEphemerals("/", cb, ctx);
+    }
+
+    /**
+     * Synchronous sync. Flushes channel between process and leader.
+     *
+     * @param path the given path
+     * @throws KeeperException If the server signals an error with a non-zero error code
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public void sync(String path) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.sync);
+        SyncRequest request = new SyncRequest();
+        SyncResponse response = new SyncResponse();
+        request.setPath(serverPath);
+        ReplyHeader r = cnxn.submitRequest(h, request, response, null);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+    }
+
+    /**
+     * Asynchronous sync. Flushes channel between process and leader.
+     * @param path
+     * @param cb a handler for the callback
+     * @param ctx context to be provided to the callback
+     * @throws IllegalArgumentException if an invalid path is specified
+     */
+    public void sync(String path, VoidCallback cb, Object ctx) {
+        String clientPath = path;
+        PathUtils.validatePath(clientPath);
+
+        String serverPath = prependChroot(clientPath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.sync);
+        SyncRequest request = new SyncRequest();
+        SyncResponse response = new SyncResponse();
+        request.setPath(serverPath);
+        cnxn.queuePacket(h, new ReplyHeader(), request, response, cb, clientPath, serverPath, ctx, null);
+    }
+
+
+    /**
+     * For the given znode path, removes the specified watcher of given
+     * watcherType.
+     *
+     * <p>
+     * Watcher shouldn't be null. A successful call guarantees that, the
+     * removed watcher won't be triggered.
+     * </p>
+     *
+     * @param path
+     *            - the path of the node
+     * @param watcher
+     *            - a concrete watcher
+     * @param watcherType
+     *            - the type of watcher to be removed
+     * @param local
+     *            - whether the watcher can be removed locally when there is no
+     *            server connection
+     * @throws InterruptedException
+     *             if the server transaction is interrupted.
+     * @throws KeeperException.NoWatcherException
+     *             if no watcher exists that match the specified parameters
+     * @throws KeeperException
+     *             if the server signals an error with a non-zero error code.
+     * @throws IllegalArgumentException
+     *             if any of the following is true:
+     *             <ul>
+     *             <li> {@code path} is invalid
+     *             <li> {@code watcher} is null
+     *             </ul>
+     *
+     * @since 3.5.0
+     */
+    public void removeWatches(
+        String path,
+        Watcher watcher,
+        WatcherType watcherType,
+        bool local) {
+        validateWatcher(watcher);
+        removeWatches((int)ZooDefs.OpCode.checkWatches, path, watcher, watcherType, local);
+    }
+
+    /**
+     * The asynchronous version of removeWatches.
+     *
+     * @see #removeWatches
+     */
+    public void removeWatches(
+        String path,
+        Watcher watcher,
+        WatcherType watcherType,
+        bool local,
+        VoidCallback cb,
+        Object ctx) {
+        validateWatcher(watcher);
+        removeWatches((int)ZooDefs.OpCode.checkWatches, path, watcher, watcherType, local, cb, ctx);
+    }
+
+    /**
+     * For the given znode path, removes all the registered watchers of given
+     * watcherType.
+     *
+     * <p>
+     * A successful call guarantees that, the removed watchers won't be
+     * triggered.
+     * </p>
+     *
+     * @param path
+     *            - the path of the node
+     * @param watcherType
+     *            - the type of watcher to be removed
+     * @param local
+     *            - whether watches can be removed locally when there is no
+     *            server connection
+     * @throws InterruptedException
+     *             if the server transaction is interrupted.
+     * @throws KeeperException.NoWatcherException
+     *             if no watcher exists that match the specified parameters
+     * @throws KeeperException
+     *             if the server signals an error with a non-zero error code.
+     * @throws IllegalArgumentException
+     *             if an invalid {@code path} is specified
+     *
+     * @since 3.5.0
+     */
+    public void removeAllWatches(
+        String path,
+        WatcherType watcherType,
+        bool local) {
+
+        removeWatches((int)ZooDefs.OpCode.removeWatches, path, null, watcherType, local);
+    }
+
+    /**
+     * The asynchronous version of removeAllWatches.
+     *
+     * @see #removeAllWatches
+     */
+    public void removeAllWatches(String path, WatcherType watcherType, bool local, VoidCallback cb, Object ctx) {
+
+        removeWatches((int)ZooDefs.OpCode.removeWatches, path, null, watcherType, local, cb, ctx);
+    }
+
+    /**
+     * Add a watch to the given znode using the given mode. Note: not all
+     * watch types can be set with this method. Only the modes available
+     * in {@link AddWatchMode} can be set with this method.
+     *
+     * @param basePath the path that the watcher applies to
+     * @param watcher the watcher
+     * @param mode type of watcher to add
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero
+     *  error code.
+     * @since 3.6.0
+     */
+    public void addWatch(String basePath, Watcher watcher, AddWatchMode mode) {
+        PathUtils.validatePath(basePath);
+        validateWatcher(watcher);
+        String serverPath = prependChroot(basePath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.addWatch);
+        AddWatchRequest request = new AddWatchRequest(serverPath, mode.getMode());
+        ReplyHeader r = cnxn.submitRequest(h, request, new ErrorResponse(),
+                new AddWatchRegistration(this, watcher, basePath, mode));
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()),
+                    basePath);
+        }
+    }
+
+    /**
+     * Add a watch to the given znode using the given mode. Note: not all
+     * watch types can be set with this method. Only the modes available
+     * in {@link AddWatchMode} can be set with this method. In this version of the method,
+     * the default watcher is used
+     *
+     * @param basePath the path that the watcher applies to
+     * @param mode type of watcher to add
+     * @throws InterruptedException If the server transaction is interrupted.
+     * @throws KeeperException If the server signals an error with a non-zero
+     *  error code.
+     * @since 3.6.0
+     */
+    public void addWatch(
+            String basePath,
+            AddWatchMode mode
+    ) {
+        addWatch(basePath, getWatchManager().getDefaultWatcher(), mode);
+    }
+
+    /**
+     * Async version of {@link #addWatch(String, Watcher, AddWatchMode)} (see it for details)
+     *
+     * @param basePath the path that the watcher applies to
+     * @param watcher the watcher
+     * @param mode type of watcher to add
+     * @param cb a handler for the callback
+     * @param ctx context to be provided to the callback
+     * @throws IllegalArgumentException if an invalid path is specified
+     * @since 3.6.0
+     */
+    public void addWatch(
+            String basePath,
+            Watcher watcher, AddWatchMode mode,
+            VoidCallback cb,
+            Object ctx
+    ) {
+        PathUtils.validatePath(basePath);
+        validateWatcher(watcher);
+        String serverPath = prependChroot(basePath);
+
+        RequestHeader h = new RequestHeader();
+        h.setType(ZooDefs.OpCode.addWatch);
+        AddWatchRequest request = new AddWatchRequest(serverPath, mode.getMode());
+        cnxn.queuePacket(h, new ReplyHeader(), request, new ErrorResponse(), cb,
+                basePath, serverPath, ctx, new AddWatchRegistration(this, watcher, basePath, mode));
+    }
+
+    /**
+     * Async version of {@link #addWatch(String, AddWatchMode)} (see it for details)
+     *
+     * @param basePath the path that the watcher applies to
+     * @param mode type of watcher to add
+     * @param cb a handler for the callback
+     * @param ctx context to be provided to the callback
+     * @throws IllegalArgumentException if an invalid path is specified
+     * @since 3.6.0
+     */
+    public void addWatch(String basePath, AddWatchMode mode, VoidCallback cb, Object ctx) {
+        addWatch(basePath, getWatchManager().getDefaultWatcher(), mode, cb, ctx);
+    }
+
+    private void validateWatcher(Watcher watcher) {
+        if (watcher == null) {
+            throw new ArgumentException("Invalid Watcher, shouldn't be null!");
+        }
+    }
+
+    private void removeWatches(
+        int opCode,
+        String path,
+        Watcher watcher,
+        WatcherType watcherType,
+        bool local) {
+        PathUtils.validatePath(path);
+        String clientPath = path;
+        String serverPath = prependChroot(clientPath);
+        WatchDeregistration wcb = new WatchDeregistration(serverPath, chroot.interceptWatcher(watcher), watcherType, local, getWatchManager());
+
+        RequestHeader h = new RequestHeader();
+        h.setType(opCode);
+        Record request = getRemoveWatchesRequest(opCode, watcherType, serverPath);
+
+        ReplyHeader r = cnxn.submitRequest(h, request, null, null, wcb);
+        if (r.getErr() != 0) {
+            throw KeeperException.create(KeeperExceptionCodeExtensions.get(r.getErr()), clientPath);
+        }
+    }
+
+    private void removeWatches(
+        int opCode,
+        String path,
+        Watcher watcher,
+        WatcherType watcherType,
+        bool local,
+        VoidCallback cb,
+        Object ctx) {
+        PathUtils.validatePath(path);
+        String clientPath = path;
+        String serverPath = prependChroot(clientPath);
+        WatchDeregistration wcb = new WatchDeregistration(serverPath, chroot.interceptWatcher(watcher), watcherType, local, getWatchManager());
+
+        RequestHeader h = new RequestHeader();
+        h.setType(opCode);
+        Record request = getRemoveWatchesRequest(opCode, watcherType, serverPath);
+
+        cnxn.queuePacket(h, new ReplyHeader(), request, null, cb, clientPath, serverPath, ctx, null, wcb);
+    }
+
+    private Record getRemoveWatchesRequest(int opCode, WatcherType watcherType, String serverPath) {
+        Record request = null;
+        switch ((ZooDefs.OpCode)opCode) {
+        case ZooDefs.OpCode.checkWatches:
+            CheckWatchesRequest chkReq = new CheckWatchesRequest();
+            chkReq.setPath(serverPath);
+            chkReq.setType(watcherType.getIntValue());
+            request = chkReq;
+            break;
+        case ZooDefs.OpCode.removeWatches:
+            RemoveWatchesRequest rmReq = new RemoveWatchesRequest();
+            rmReq.setPath(serverPath);
+            rmReq.setType(watcherType.getIntValue());
+            request = rmReq;
+            break;
+        default:
+            LOG.warn("unknown type " + opCode);
+            break;
+        }
+        return request;
+    }
+
+    public States getState() {
+        return cnxn.getState();
+    }
+
+    /**
+     * String representation of this ZooKeeper client. Suitable for things
+     * like logging.
+     *
+     * Do NOT count on the format of this string, it may change without
+     * warning.
+     *
+     * @since 3.3.0
+     */
+    public override string ToString() {
+        States state = getState();
+        return ("State:"
+                + state.ToString()
+                + (state.isConnected() ? " Timeout:" + getSessionTimeout() + " " : " ")
+                + cnxn);
+    }
+
+    /*
+     * Methods to aid in testing follow.
+     *
+     * THESE METHODS ARE EXPECTED TO BE USED FOR TESTING ONLY!!!
+     */
+
+    /**
+     * Wait up to wait milliseconds for the underlying threads to shutdown.
+     * THIS METHOD IS EXPECTED TO BE USED FOR TESTING ONLY!!!
+     *
+     * @since 3.3.0
+     *
+     * @param wait max wait in milliseconds
+     * @return true iff all threads are shutdown, otw false
+     */
+    // TODO
+    /*
+    protected boolean testableWaitForShutdown(int wait) throws InterruptedException {
+        cnxn.sendThread.join(wait);
+        if (cnxn.sendThread.isAlive()) {
+            return false;
+        }
+        cnxn.eventThread.join(wait);
+        return !cnxn.eventThread.isAlive();
+    }
+    */
+
+    /**
+     * Returns the address to which the socket is connected. Useful for testing
+     * against an ensemble - test client may need to know which server
+     * to shutdown if interested in verifying that the code handles
+     * disconnection/reconnection correctly.
+     * THIS METHOD IS EXPECTED TO BE USED FOR TESTING ONLY!!!
+     *
+     * @since 3.3.0
+     *
+     * @return ip address of the remote side of the connection or null if
+     *         not connected
+     */
+    // TODO
+    /*
+    protected SocketAddress testableRemoteSocketAddress() {
+        return cnxn.sendThread.getClientCnxnSocket().getRemoteSocketAddress();
+    }
+    */
+
+    /**
+     * Returns the local address to which the socket is bound.
+     * THIS METHOD IS EXPECTED TO BE USED FOR TESTING ONLY!!!
+     *
+     * @since 3.3.0
+     *
+     * @return ip address of the remote side of the connection or null if
+     *         not connected
+     */
+    // TODO
+    /*
+    protected SocketAddress testableLocalSocketAddress() {
+        return cnxn.sendThread.getClientCnxnSocket().getLocalSocketAddress();
+    }
+    */
+
+    private ClientCnxnSocket getClientCnxnSocket() {
+        throw new NotImplementedException();
+        /*
+        String clientCnxnSocketName = getClientConfig().getProperty(ZKClientConfig.ZOOKEEPER_CLIENT_CNXN_SOCKET);
+        if (clientCnxnSocketName == null || clientCnxnSocketName.equals(ClientCnxnSocketNIO.class.getSimpleName())) {
+            clientCnxnSocketName = ClientCnxnSocketNIO.class.getName();
+        } else if (clientCnxnSocketName.equals(ClientCnxnSocketNetty.class.getSimpleName())) {
+            clientCnxnSocketName = ClientCnxnSocketNetty.class.getName();
+        }
+
+        try {
+            Constructor<?> clientCxnConstructor = Class.forName(clientCnxnSocketName)
+                                                       .getDeclaredConstructor(ZKClientConfig.class);
+            ClientCnxnSocket clientCxnSocket = (ClientCnxnSocket) clientCxnConstructor.newInstance(getClientConfig());
+            return clientCxnSocket;
+        } catch (Exception e) {
+            throw new IOException("Couldn't instantiate " + clientCnxnSocketName, e);
+        }
+        */
+    }
+
+    /**
+     * Return the default watcher of this instance if required.
+     *
+     * @param required if the default watcher required
+     * @return the default watcher if required, otherwise {@code null}.
+     * @throws IllegalStateException if a null default watcher is required
+     */
+    private Watcher getDefaultWatcher(bool required) {
+        if (required) {
+            Watcher defaultWatcher = getWatchManager().getDefaultWatcher();
+            if (defaultWatcher != null) {
+                return defaultWatcher;
+            } else {
+                throw new Exception("Default watcher is required, but it is null.");
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Validates the provided ACL list for null, empty or null value in it.
+     *
+     * @param acl
+     *            ACL list
+     * @throws KeeperException.InvalidACLException
+     *             if ACL list is not valid
+     */
+    private void validateACL(List<ACL> acl) {
+        if (acl == null || acl.isEmpty() || acl.contains(null)) {
+            throw new KeeperException.InvalidACLException();
+        }
+    }
+
+    /**
+     * Gives all authentication information added into the current session.
+     *
+     * @return list of authentication info
+     * @throws InterruptedException when interrupted
+     */
+    public List<ClientInfo> whoAmI() {
+        lock (_lock) {
+            RequestHeader h = new RequestHeader();
+            h.setType(ZooDefs.OpCode.whoAmI);
+            WhoAmIResponse response = new WhoAmIResponse();
+            cnxn.submitRequest(h, null, response, null);
+            return response.getClientInfo();
+        }
     }
 
     public void Dispose()

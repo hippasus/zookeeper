@@ -449,7 +449,7 @@ public class ClientCnxn {
             waitingEvents.add(_clientCnxn.eventOfDeath);
         }
 
-        protected override void run(CancellationToken ct) {
+        protected override Task run(CancellationToken ct) {
             try {
                 isRunning = true;
                 while (!ct.IsCancellationRequested) {
@@ -472,7 +472,9 @@ public class ClientCnxn {
                 LOG.error("Event thread exiting due to interruption", e);
             }
 
-            LOG.info("EventThread shut down for session: 0x{}", Long.toHexString(_clientCnxn.getSessionId()));
+            LOG.info("EventThread shut down for session: 0x{0}", Long.toHexString(_clientCnxn.getSessionId()));
+
+            return Task.CompletedTask;
         }
 
         private void processEvent(Object @event) {
@@ -692,7 +694,7 @@ public class ClientCnxn {
         eventThread.queueEvent(@event, materializedWatchers);
     }
 
-    void queueCallback(AsyncCallback cb, int rc, String path, Object ctx) {
+    internal void queueCallback(AsyncCallback cb, int rc, String path, Object ctx) {
         eventThread.queueCallback(cb, rc, path, ctx);
     }
 
@@ -1029,12 +1031,13 @@ public class ClientCnxn {
         // throws a LoginException: see startConnect() below.
         private bool saslLoginFailed = false;
 
-        private void startConnect(InetSocketAddress addr) {
+        private async Task startConnect(InetSocketAddress addr) {
             // initializing it for new connection
             saslLoginFailed = false;
             if (!isFirstConnect) {
                 try {
-                    Thread.Sleep(ThreadLocalRandom.current().nextInt(1000));
+                    //Thread.Sleep(ThreadLocalRandom.current().nextInt(1000));
+                    await Task.Delay(ThreadLocalRandom.current().nextInt(1000));
                 } catch (ThreadInterruptedException e) {
                     LOG.warn("Unexpected exception", e);
                 }
@@ -1066,7 +1069,7 @@ public class ClientCnxn {
             }
             logStartConnect(addr);
 
-            clientCnxnSocket.connect(addr);
+            await clientCnxnSocket.connect(addr);
         }
 
         private void logStartConnect(InetSocketAddress addr) {
@@ -1076,7 +1079,7 @@ public class ClientCnxn {
             }
         }
 
-        protected override void run(CancellationToken ct) {
+        protected override async Task run(CancellationToken ct) {
             clientCnxnSocket.introduce(this, _clientCnxn.sessionId, _clientCnxn.outgoingQueue);
             clientCnxnSocket.updateNow();
             clientCnxnSocket.updateLastSendAndHeard();
@@ -1084,7 +1087,7 @@ public class ClientCnxn {
             long lastPingRwServer = Time.currentElapsedTime();
             int MAX_SEND_PING_INTERVAL = 10000; //10 seconds
             InetSocketAddress serverAddress = null;
-            while (_clientCnxn.state.isAlive()) {
+            while (_clientCnxn.state.isAlive() && !ct.IsCancellationRequested) {
                 try {
                     if (!clientCnxnSocket.isConnected()) {
                         // don't re-establish connection if we are closing
@@ -1098,7 +1101,7 @@ public class ClientCnxn {
                             serverAddress = _clientCnxn.hostProvider.next(1000);
                         }
                         _clientCnxn.onConnecting(serverAddress);
-                        startConnect(serverAddress);
+                        await startConnect(serverAddress);
                         // Update now to start the connection timer right after we make a connection attempt
                         clientCnxnSocket.updateNow();
                         clientCnxnSocket.updateLastSend();
@@ -1188,7 +1191,7 @@ public class ClientCnxn {
                         to = Math.Min(to, pingRwTimeout - idlePingRwServer);
                     }
 
-                    clientCnxnSocket.doTransport(to, _clientCnxn.pendingQueue, _clientCnxn);
+                    await clientCnxnSocket.doTransport(to, _clientCnxn.pendingQueue, _clientCnxn);
                 } catch (Exception e) {
                     if (_clientCnxn.closing) {
                         // closing so this is expected
@@ -1239,7 +1242,7 @@ public class ClientCnxn {
                 "SendThread exited loop for session: 0x" + Long.toHexString(_clientCnxn.getSessionId()));
         }
 
-        private void cleanAndNotifyState() {
+        public override void cleanAndNotifyState() {
             cleanup();
             if (_clientCnxn.state.isAlive()) {
                 _clientCnxn.eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, Watcher.Event.KeeperState.Disconnected, null));
@@ -1298,7 +1301,7 @@ public class ClientCnxn {
          * Callback invoked by the ClientCnxnSocket once a connection has been
          * established.
          */
-        void onConnected(
+        internal void onConnected(
             int _negotiatedSessionTimeout,
             long _sessionId,
             byte[] _sessionPasswd,
@@ -1339,7 +1342,8 @@ public class ClientCnxn {
             _clientCnxn.eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None, eventState, null));
         }
 
-        void close() {
+        public override void close() {
+            base.close();
             try {
                 changeZkState(States.CLOSED);
             } catch (IOException e) {
@@ -1417,7 +1421,7 @@ public class ClientCnxn {
 
         try {
             RequestHeader h = new RequestHeader();
-            h.setType((int)ZooDefs.OpCode.closeSession);
+            h.setType(ZooDefs.OpCode.closeSession);
 
             submitRequest(h, null, null, null);
         } catch (ThreadInterruptedException e) {

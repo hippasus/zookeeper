@@ -18,6 +18,7 @@ internal static class CSharpTypeJavaExtentions
     public static string[] split(this string s, string seprator) => s.Split(new string[] { seprator }, StringSplitOptions.None);
     public static int indexOf(this string s, char c) => s.IndexOf(c);
     public static int lastIndexOf(this string s, char c) => s.LastIndexOf(c);
+    public static bool equals(this string s, string value) => string.Equals(s, value, StringComparison.Ordinal);
     public static bool startsWith(this string s, string value) => s.StartsWith(value);
     public static string substring(this string s, int start) => s.Substring(start);
     public static string substring(this string s, int start, int length) => s.Substring(start, length);
@@ -55,6 +56,10 @@ internal static class CSharpTypeJavaExtentions
 
     public static void add<T>(this IList<T> list, T value) => list.Add(value);
     public static bool isEmpty<T>(this IList<T> list) => list.Count == 0;
+    public static int size<T>(this IList<T> list) => list.Count;
+    public static void clear<T>(this IList<T> list) => list.Clear();
+    public static bool contains<T>(this IList<T> list, T v) => list.Contains(v);
+
     public static Iterator<T> iterator<T>(this IEnumerable<T> list) => new(list);
 
     public static void addAll<T>(this HashSet<T> hashSet, IEnumerable<T> other) => hashSet.UnionWith(other);

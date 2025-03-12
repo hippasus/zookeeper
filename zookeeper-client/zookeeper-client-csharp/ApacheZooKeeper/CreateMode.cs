@@ -110,7 +110,7 @@ public static class CreateModeExtensions
     /// <summary>
     /// Maps an integer value to a CreateMode value with a default.
     /// </summary>
-    public static CreateMode fromFlag(int flag, CreateMode defaultMode)
+    public static CreateMode? fromFlag(int flag, CreateMode? defaultMode)
     {
         return flag switch
         {

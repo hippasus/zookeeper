@@ -31,12 +31,12 @@ public abstract record Chroot
     /**
      * Creates a delegating callback to strip chroot from created node name.
      */
-    //AsyncCallback.StringCallback interceptCallback(AsyncCallback.StringCallback callback); //TODO:
+    public abstract StringCallback interceptCallback(StringCallback callback);
 
     /**
      * Creates a delegating callback to strip chroot from created node name.
      */
-    //AsyncCallback.Create2Callback interceptCallback(AsyncCallback.Create2Callback callback); //TODO:
+    public abstract Create2Callback interceptCallback(Create2Callback callback);
 
     /**
      * Creates a delegating watcher to strip chroot from {@link WatchedEvent#getPath()} for given watcher.
@@ -49,17 +49,13 @@ public abstract record Chroot
 
         public override string strip(string serverPath) { return serverPath; }
 
-        /*
-        @Override
-        public AsyncCallback.StringCallback interceptCallback(AsyncCallback.StringCallback callback) {
+        public override StringCallback interceptCallback(StringCallback callback) {
             return callback;
         }
 
-        @Override
-        public AsyncCallback.Create2Callback interceptCallback(AsyncCallback.Create2Callback callback) {
+        public override Create2Callback interceptCallback(Create2Callback callback) {
             return callback;
         }
-        */
 
         public override Watcher interceptWatcher(Watcher watcher) {
             return watcher;
@@ -97,17 +93,13 @@ public abstract record Chroot
             }
         }
 
-        /*
-        @Override
-        public AsyncCallback.StringCallback interceptCallback(AsyncCallback.StringCallback callback) {
+        public override StringCallback interceptCallback(StringCallback callback) {
             return new ChrootCreateCallback(this, callback);
         }
 
-        @Override
-        public AsyncCallback.Create2Callback interceptCallback(AsyncCallback.Create2Callback callback) {
+        public override Create2Callback interceptCallback(Create2Callback callback) {
             return new ChrootCreateCallback(this, callback);
         }
-        */
 
         public override Watcher interceptWatcher(Watcher watcher) {
             return new ChrootWatcher(this, watcher);

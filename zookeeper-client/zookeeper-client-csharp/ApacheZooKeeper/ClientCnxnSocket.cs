@@ -1,31 +1,33 @@
 namespace ApacheZooKeeper;
 
 using ApacheZooKeeper.Client;
+using ApacheZooKeeper.Compact;
 using ApacheZooKeeper.JavaPorts;
+using ApacheZooKeeper.Jute;
 using ApacheZooKeeper.Logging;
+using ApacheZooKeeper.Proto;
 
 using System.Net;
+using System.Text;
 
 public abstract class ClientCnxnSocket
 {
     private static readonly ILogger LOG = LoggerManager.GetLogger<ClientCnxnSocket>();
 
-    //private readonly ProtocolManager protocolManager = new ProtocolManager();
+    private readonly ProtocolManager protocolManager = new ProtocolManager();
 
     protected bool initialized;
 
     /**
      * This buffer is only used to read the length of the incoming message.
      */
-    //TODO
-    //protected readonly ByteBuffer lenBuffer = ByteBuffer.allocateDirect(4);
+    protected readonly ByteBuffer lenBuffer = ByteBuffer.allocateDirect(4);
 
     /**
      * After the length is read, a new incomingBuffer is allocated in
      * readLength() to receive the full message.
      */
-    //TODO
-    //protected ByteBuffer incomingBuffer = lenBuffer;
+    protected ByteBuffer incomingBuffer;
     protected readonly AtomicLong sentCount = new AtomicLong(0L);
     protected readonly AtomicLong recvCount = new AtomicLong(0L);
     // Used for reactive timeout detection, say connection read timeout and session expiration timeout.
@@ -43,6 +45,11 @@ public abstract class ClientCnxnSocket
      * Otherwise the socket doesn't need to know it.
      */
     protected long sessionId;
+
+    public ClientCnxnSocket()
+    {
+        incomingBuffer = lenBuffer;
+    }
 
     internal void introduce(ClientCnxn.SendThread sendThread, long sessionId, LinkedBlockingDeque<ClientCnxn.Packet> outgoingQueue) {
         this.sendThread = sendThread;
@@ -83,8 +90,6 @@ public abstract class ClientCnxnSocket
         this.lastHeard = now;
     }
 
-    // TODO
-    /*
     void readLength() {
         int len = incomingBuffer.getInt();
         if (len < 0 || len > packetLen) {
@@ -92,10 +97,8 @@ public abstract class ClientCnxnSocket
         }
         incomingBuffer = ByteBuffer.allocate(len);
     }
-    /*
 
-    /*
-    void readConnectResult() {
+    public void readConnectResult() {
         if (LOG.isTraceEnabled()) {
             StringBuilder buf = new StringBuilder("0x[");
             foreach (byte b in incomingBuffer.array()) {
@@ -103,7 +106,7 @@ public abstract class ClientCnxnSocket
             }
             buf.append("]");
             if (LOG.isTraceEnabled()) {
-                LOG.trace("readConnectResult {} {}", incomingBuffer.remaining(), buf);
+                LOG.trace("readConnectResult {0} {1}", incomingBuffer.remaining(), buf);
             }
         }
 
@@ -116,11 +119,10 @@ public abstract class ClientCnxnSocket
         this.sessionId = conRsp.getSessionId();
         sendThread.onConnected(conRsp.getTimeOut(), this.sessionId, conRsp.getPasswd(), conRsp.getReadOnly());
     }
-    */
 
     public abstract bool isConnected();
 
-    public abstract void connect(InetSocketAddress addr);
+    public abstract Task connect(InetSocketAddress addr);
 
     /**
      * Returns the address to which the socket is connected.
@@ -172,7 +174,7 @@ public abstract class ClientCnxnSocket
      * @throws IOException
      * @throws InterruptedException
      */
-    public abstract void doTransport(
+    public abstract Task doTransport(
         int waitTimeOut,
         Queue<ClientCnxn.Packet> pendingQueue,
         ClientCnxn cnxn);

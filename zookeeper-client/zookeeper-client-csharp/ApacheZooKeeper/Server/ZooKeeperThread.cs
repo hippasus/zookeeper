@@ -12,14 +12,12 @@ public abstract class ZooKeeperThread : IDisposable
 
     public void start()
     {
-        _task ??= Task.Run(() => run(_cts.Token));
+        _task ??= Task.Run(async () => await run(_cts.Token));
     }
 
-    protected virtual void run(CancellationToken ct)
-    {
-    }
+    protected virtual Task run(CancellationToken ct) => Task.CompletedTask;
 
-    public void close()
+    public virtual void close()
     {
         _cts?.Cancel();
         _cts?.Dispose();
@@ -29,7 +27,7 @@ public abstract class ZooKeeperThread : IDisposable
     {
     }
 
-    public void cleanAndNotifyState()
+    public virtual void cleanAndNotifyState()
     {
         // TODO:
     }

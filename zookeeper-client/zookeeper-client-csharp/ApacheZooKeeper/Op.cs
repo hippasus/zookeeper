@@ -76,7 +76,7 @@ public abstract class Op {
      *                optional ttl or 0 (flags must imply a TTL creation mode)
      */
     public static Op create(String path, byte[] data, List<ACL> acl, int flags, long ttl) {
-        CreateMode createMode = CreateModeExtensions.fromFlag(flags, CreateMode.PERSISTENT);
+        CreateMode createMode = CreateModeExtensions.fromFlag(flags, CreateMode.PERSISTENT)!.Value;
         if (createMode.isTTL()) {
             return new CreateTTL(path, data, acl, createMode, ttl);
         }
@@ -137,7 +137,7 @@ public abstract class Op {
      * @param defaultOpCode
      *                op code to be used if no one is inferred from create mode
      */
-    static Op create(String path, byte[] data, CreateOptions options, ZooDefs.OpCode defaultOpCode) {
+    public static Op create(String path, byte[] data, CreateOptions options, ZooDefs.OpCode defaultOpCode) {
         if (options.getCreateMode().isTTL()) {
             return new CreateTTL(path, data, options.getAcl(), options.getCreateMode(), options.getTtl());
         }
@@ -277,7 +277,7 @@ public abstract class Op {
         }
 
         internal Create(String path, byte[] data, List<ACL> acl, int flags, ZooDefs.OpCode defaultOpCode)
-            : base(getOpcode(CreateModeExtensions.fromFlag(flags, CreateMode.PERSISTENT), defaultOpCode), path, OpKind.TRANSACTION)
+            : base(getOpcode(CreateModeExtensions.fromFlag(flags, CreateMode.PERSISTENT)!.Value, defaultOpCode), path, OpKind.TRANSACTION)
         {
             this.data = data;
             this.acl = acl;

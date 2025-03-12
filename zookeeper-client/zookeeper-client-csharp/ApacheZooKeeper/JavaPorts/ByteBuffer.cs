@@ -1,6 +1,6 @@
 namespace ApacheZooKeeper;
 
-internal class ByteBuffer
+public class ByteBuffer
 {
     private byte[] _buffer;
     private int _position;
@@ -180,4 +180,6 @@ internal class ByteBuffer
             (arraylength < length + offset))
             throw new IndexOutOfRangeException();
     }
+
+    public static ByteBuffer allocateDirect(int capacity) => new ByteBuffer(capacity);
 }
